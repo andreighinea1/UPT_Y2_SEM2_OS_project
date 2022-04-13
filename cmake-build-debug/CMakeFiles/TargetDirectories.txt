@@ -1,0 +1,3 @@
+D:/Personal/UNI/S2/OS/ShellProject/cmake-build-debug/CMakeFiles/ShellProject.dir
+D:/Personal/UNI/S2/OS/ShellProject/cmake-build-debug/CMakeFiles/edit_cache.dir
+D:/Personal/UNI/S2/OS/ShellProject/cmake-build-debug/CMakeFiles/rebuild_cache.dir
