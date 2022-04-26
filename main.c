@@ -7,6 +7,7 @@
 #include <ctype.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <sys/wait.h>
 
 // For Windows
 #if (defined(_WIN32) || defined(__WIN32__))
@@ -92,12 +93,27 @@ unsigned processBuf(char *buf) {
 
 // "create_   tip_nume_t_    d_"
 // "tip_nume_t_    d_"
-const char *getNextArg(char *buf, const char *maxBuf){
+// FAILED when return points towards 0
+const char *getNextArg(const char *buf, const char *maxBuf){
     for (; *buf; ++buf);
     if(buf >= maxBuf)
         return buf;
 
     return jumpWhitespaces(buf + 1);
+}
+
+char *const *getArgv(unsigned argc, const char *buf, const char *maxBuf){
+    const char ** argv = malloc(sizeof(char *) * argc);
+    const char *arg;
+    unsigned n=0;
+
+    argv[n++] = buf;
+    while((arg = getNextArg(buf, maxBuf)) && *arg) {
+        argv[n++] = arg;
+        buf = arg;
+    }
+
+    return (char *const *)argv;
 }
 
 void m_chdir(char *buf){
@@ -212,6 +228,59 @@ void m_create(char *buf, const char *maxBuf) {
     }
 }
 
+int pid_status;
+void executeExternal(unsigned argc, char *buf, const char *maxBuf) {
+    char *const *argv = getArgv(argc, buf, maxBuf);
+    if (argv == NULL) {
+        free((char **)argv);
+        printf("No arguments!!\n");
+        help();
+        return;
+    }
+
+    // for (unsigned i = 0; i < argc; i++)
+    //     printf("%s\n", argv[i]);
+
+    pid_t pid, w;
+    int status;
+    if ((pid = fork()) < 0)
+    {
+        free((char **)argv);
+        printf("Couldn't start a process\n");
+        help();
+        return;
+    }
+    if (pid == 0) // Child code
+    {
+        execvp(argv[0], argv);
+
+        // Error
+        free((char **)argv);
+        printf("Couldn't start a process\n");
+        help();
+        exit(-1);
+    }
+    w = waitpid(pid, &pid_status, WUNTRACED | WCONTINUED);
+    if (w == -1) {
+        perror("waitpid");
+        exit(EXIT_FAILURE);
+    }
+
+    free((char **)argv);
+}
+
+void status(){
+    if (WIFEXITED(pid_status)) {
+        printf("exited, status=%d\n", WEXITSTATUS(pid_status));
+    } else if (WIFSIGNALED(pid_status)) {
+        printf("killed by signal %d\n", WTERMSIG(pid_status));
+    } else if (WIFSTOPPED(pid_status)) {
+        printf("stopped by signal %d\n", WSTOPSIG(pid_status));
+    } else if (WIFCONTINUED(pid_status)) {
+        printf("continued\n");
+    }
+}
+
 void start_shell(){
     char buf[1001];
     ssize_t len;
@@ -220,43 +289,52 @@ void start_shell(){
     fflush(stdout);
     while ((len = read(STDIN_FILENO, buf, 1000)) > 0) {
         buf[--len] = 0;
-        printf("len   : |%d| ", len);
-        printf("buffer: |%s|\n", buf);
+        // printf("len   : |%d| ", len);
+        // printf("buffer: |%s|\n", buf);
 
         const char *maxBuf = buf + len; // including the last '\0'
 
         unsigned argc = processBuf(buf);    // "create    tip nume t     d_"
-                                            // "create_   tip_nume_t_    d_"  // '_' is '\0' actually
+        // "create_   tip_nume_t_    d_"  // '_' is '\0' actually
 //        printf("proc  : |%s|\n", buf);
 //        printf("argc  : |%u|\n", argc);
 
-        if (!strcmp(buf, "exit")) {
+        if (!strcmp(buf, "help")) {
+            help();
+        } if (!strcmp(buf, "exit")) {
             exit(0);
         } else if (argc == 2 && !strcmp(buf, "cd")) { // I can use strcmp because I preprocessed the buf with '\0'
             m_chdir(buf);
         } else if (!strcmp(buf, "pwd")) {
             if(argc != 1){
-                printf("pwd may not receive arguments\n");
+                printf("pwd may not receive arguments!\n");
                 help();
             } else {
                 m_pwd();
             }
         } else if (!strcmp(buf, "type")) {
             if(argc != 2){
-                printf("type may only receive 1 argument\n");
+                printf("type may only receive 1 argument!\n");
                 help();
             } else {
                 m_print_type(buf);
             }
         } else if (!strcmp(buf, "create")) {
             if(argc != 3 && argc != 5){
-                printf("create may only receive 3 or 5 arguments\n");
+                printf("create may only receive 3 or 5 arguments!\n");
                 help();
             } else {
                 m_create(buf, maxBuf);
             }
-        } else {
-            help();
+        } else if (!strcmp(buf, "status")) {
+            if(argc != 1){
+                printf("status may not receive arguments!\n");
+                help();
+            } else {
+                status();
+            }
+        } else if (argc >= 2){
+            executeExternal(argc, buf, maxBuf);
         }
 
         printf("shell > ");
