@@ -23,6 +23,7 @@
 #endif
 
 #if (defined(_WIN32) || defined(__WIN32__))
+
 #include <windows.h>
 #include <winbase.h>
 
@@ -42,6 +43,7 @@ int symlink(const char *target, const char *linkpath) {
         return -1; // target not known
     return 0;
 }
+
 #endif
 // End for Windows
 
@@ -77,13 +79,13 @@ const char *jumpWhitespaces(const char *buf) {
 // "create    tip nume t     d_"
 // "create_   tip_nume_t_    d_"  // _ is \0
 unsigned processBuf(char *buf) {
-    unsigned argc=1;
-    buf = (char *)jumpWhitespaces(buf); // Jump if there are whitespaces at the start of the buffer
+    unsigned argc = 1;
+    buf = (char *) jumpWhitespaces(buf); // Jump if there are whitespaces at the start of the buffer
 
     for (; *buf; ++buf) {
         if (isspace(*buf)) {
             *buf = 0;
-            buf = (char *)jumpWhitespaces(buf + 1); // Jump over the rest of the whitespaces
+            buf = (char *) jumpWhitespaces(buf + 1); // Jump over the rest of the whitespaces
             ++argc;
         }
     }
@@ -94,36 +96,36 @@ unsigned processBuf(char *buf) {
 // "create_   tip_nume_t_    d_"
 // "tip_nume_t_    d_"
 // FAILED when return points towards 0
-const char *getNextArg(const char *buf, const char *maxBuf){
+const char *getNextArg(const char *buf, const char *maxBuf) {
     for (; *buf; ++buf);
-    if(buf >= maxBuf)
+    if (buf >= maxBuf)
         return buf;
 
     return jumpWhitespaces(buf + 1);
 }
 
-char *const *getArgv(unsigned argc, const char *buf, const char *maxBuf){
-    const char ** argv = malloc(sizeof(char *) * argc);
+char *const *getArgv(unsigned argc, const char *buf, const char *maxBuf) {
+    const char **argv = malloc(sizeof(char *) * argc);
     const char *arg;
-    unsigned n=0;
+    unsigned n = 0;
 
     argv[n++] = buf;
-    while((arg = getNextArg(buf, maxBuf)) && *arg) {
+    while ((arg = getNextArg(buf, maxBuf)) && *arg) {
         argv[n++] = arg;
         buf = arg;
     }
 
-    return (char *const *)argv;
+    return (char *const *) argv;
 }
 
-void m_chdir(char *buf){
-    if(chdir(jumpWhitespaces(buf + 3)) == -1) {
+void m_chdir(char *buf) {
+    if (chdir(jumpWhitespaces(buf + 3)) == -1) {
         perror("ERROR cd");
         help();
     }
 }
 
-void m_pwd(){
+void m_pwd() {
     char *cwd;
     if ((cwd = getcwd(NULL, 0)) != NULL)
         printf("%s\n", cwd);
@@ -133,7 +135,7 @@ void m_pwd(){
     }
 }
 
-int m_get_type(const char *buf){
+int m_get_type(const char *buf) {
     struct stat sb;
     if (stat(jumpWhitespaces(buf + 5), &sb) == -1) {
         perror("ERROR type");
@@ -159,13 +161,13 @@ void m_print_type(char *buf) {
     }
 }
 
-int supportedFileType(const char *buf){
+int supportedFileType(const char *buf) {
     return !strcmp(buf, "-f") || !strcmp(buf, "-l") || !strcmp(buf, "-d");
 }
 
 void m_create(char *buf, const char *maxBuf) {
-    char *typeBuf = (char *)jumpWhitespaces(buf + 7);
-    char *nameBuf = (char *)getNextArg(typeBuf, maxBuf);
+    char *typeBuf = (char *) jumpWhitespaces(buf + 7);
+    char *nameBuf = (char *) getNextArg(typeBuf, maxBuf);
     if (!(*typeBuf) || !(*nameBuf)) {
         printf("No type/name provided\n");
         help();
@@ -177,7 +179,7 @@ void m_create(char *buf, const char *maxBuf) {
         return;
     }
 
-    char *targetBuf = (char *)getNextArg(nameBuf, maxBuf);
+    char *targetBuf = (char *) getNextArg(nameBuf, maxBuf);
 
     // Prepare the directory
     char dirBuf[2001];
@@ -208,7 +210,7 @@ void m_create(char *buf, const char *maxBuf) {
             help();
             return;
         }
-        if(close(fp) == -1){
+        if (close(fp) == -1) {
             perror("Could not close file");
             help();
             return;
@@ -229,10 +231,11 @@ void m_create(char *buf, const char *maxBuf) {
 }
 
 int pid_status;
+
 void executeExternal(unsigned argc, char *buf, const char *maxBuf) {
     char *const *argv = getArgv(argc, buf, maxBuf);
     if (argv == NULL) {
-        free((char **)argv);
+        free((char **) argv);
         printf("No arguments!!\n");
         help();
         return;
@@ -243,9 +246,8 @@ void executeExternal(unsigned argc, char *buf, const char *maxBuf) {
 
     pid_t pid, w;
     int status;
-    if ((pid = fork()) < 0)
-    {
-        free((char **)argv);
+    if ((pid = fork()) < 0) {
+        free((char **) argv);
         printf("Couldn't start a process\n");
         help();
         return;
@@ -255,7 +257,7 @@ void executeExternal(unsigned argc, char *buf, const char *maxBuf) {
         execvp(argv[0], argv);
 
         // Error
-        free((char **)argv);
+        free((char **) argv);
         printf("Couldn't start a process\n");
         help();
         exit(-1);
@@ -266,10 +268,10 @@ void executeExternal(unsigned argc, char *buf, const char *maxBuf) {
         exit(EXIT_FAILURE);
     }
 
-    free((char **)argv);
+    free((char **) argv);
 }
 
-void status(){
+void status() {
     if (WIFEXITED(pid_status)) {
         printf("exited, status=%d\n", WEXITSTATUS(pid_status));
     } else if (WIFSIGNALED(pid_status)) {
@@ -281,64 +283,69 @@ void status(){
     }
 }
 
-void start_shell(){
+void start_shell() {
     char buf[1001];
+    char *cwd;
     ssize_t len;
 
-    printf("shell > ");
-    fflush(stdout);
-    while ((len = read(STDIN_FILENO, buf, 1000)) > 0) {
-        buf[--len] = 0;
-        // printf("len   : |%d| ", len);
-        // printf("buffer: |%s|\n", buf);
-
-        const char *maxBuf = buf + len; // including the last '\0'
-
-        unsigned argc = processBuf(buf);    // "create    tip nume t     d_"
-        // "create_   tip_nume_t_    d_"  // '_' is '\0' actually
-//        printf("proc  : |%s|\n", buf);
-//        printf("argc  : |%u|\n", argc);
-
-        if (!strcmp(buf, "help")) {
-            help();
-        } if (!strcmp(buf, "exit")) {
-            exit(0);
-        } else if (argc == 2 && !strcmp(buf, "cd")) { // I can use strcmp because I preprocessed the buf with '\0'
-            m_chdir(buf);
-        } else if (!strcmp(buf, "pwd")) {
-            if(argc != 1){
-                printf("pwd may not receive arguments!\n");
-                help();
-            } else {
-                m_pwd();
-            }
-        } else if (!strcmp(buf, "type")) {
-            if(argc != 2){
-                printf("type may only receive 1 argument!\n");
-                help();
-            } else {
-                m_print_type(buf);
-            }
-        } else if (!strcmp(buf, "create")) {
-            if(argc != 3 && argc != 5){
-                printf("create may only receive 3 or 5 arguments!\n");
-                help();
-            } else {
-                m_create(buf, maxBuf);
-            }
-        } else if (!strcmp(buf, "status")) {
-            if(argc != 1){
-                printf("status may not receive arguments!\n");
-                help();
-            } else {
-                status();
-            }
-        } else if (argc >= 2){
-            executeExternal(argc, buf, maxBuf);
-        }
-
-        printf("shell > ");
+    while (1) {
+        if ((cwd = getcwd(NULL, 0)) != NULL)
+            printf("shell:%s > ", cwd);
+        else
+            printf("shell > ");
         fflush(stdout);
+
+        if ((len = read(STDIN_FILENO, buf, 1000)) > 0) {
+            buf[--len] = 0;
+            // printf("len   : |%d| ", len);
+            // printf("buffer: |%s|\n", buf);
+
+            const char *maxBuf = buf + len; // including the last '\0'
+
+            unsigned argc = processBuf(buf);    // "create    tip nume t     d_"
+            // "create_   tip_nume_t_    d_"  // '_' is '\0' actually
+//            printf("proc  : |%s|\n", buf);
+//            printf("argc  : |%u|\n", argc);
+
+            if (!strcmp(buf, "help")) {
+                help();
+            }
+            if (!strcmp(buf, "exit")) {
+                exit(0);
+            } else if (argc == 2 && !strcmp(buf, "cd")) { // I can use strcmp because I preprocessed the buf with '\0'
+                m_chdir(buf);
+            } else if (!strcmp(buf, "pwd")) {
+                if (argc != 1) {
+                    printf("pwd may not receive arguments!\n");
+                    help();
+                } else {
+                    m_pwd();
+                }
+            } else if (!strcmp(buf, "type")) {
+                if (argc != 2) {
+                    printf("type may only receive 1 argument!\n");
+                    help();
+                } else {
+                    m_print_type(buf);
+                }
+            } else if (!strcmp(buf, "create")) {
+                if (argc != 3 && argc != 5) {
+                    printf("create may only receive 3 or 5 arguments!\n");
+                    help();
+                } else {
+                    m_create(buf, maxBuf);
+                }
+            } else if (!strcmp(buf, "status")) {
+                if (argc != 1) {
+                    printf("status may not receive arguments!\n");
+                    help();
+                } else {
+                    status();
+                }
+            } else if (argc >= 2) {
+                executeExternal(argc, buf, maxBuf);
+            }
+        }
     }
 }
 
