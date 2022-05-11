@@ -57,15 +57,20 @@ void help() {
            "1. A promt functionality\n"
            "2. Execute commands syncronously\n"
            "3. Built-in commands:\n"
-           "   - help\n"
-           "   - exit\n"
-           "   - cd\n"
-           "   - pwd\n"
-           "   - type ENTRY\n"
-           "   - create TYPE NAME [TARGET] [DIR]\n"
-           "            -> -f  (regular file)\n"
-           "            -> -l  (symlink)\n"
-           "            -> -d  (directory)\n"
+           "   - help         -> displays this message\n"
+           "   - exit         -> exits the shell\n"
+           "   - cd <DIR>     -> changes the current directory\n"
+           "   - pwd          -> prints the current directory\n"
+           "   - type <ENTRY> -> displays the type of ENTRY (absolute/relative path)\n"
+           "   - create <TYPE> <NAME> [TARGET] [DIR]\n"
+           "      - creates a new entry of the given TYPE, where TYPE may have one of the following values:\n"
+           "            -> -f  (regular file) -> no TARGET or DIR\n"
+           "            -> -l  (symlink) -> <TARGET>, [DIR]{.}\n"
+           "            -> -d  (directory) -> no TARGET or DIR\n"
+           "4. run UNIX commands:\n"
+           "   - <COMMAND> [ARG1 ARG2 … ] will execute the given COMMAND with an arbitrary number of arguments\n"
+           "   - status -> displays the exit status of the previously executed command\n"
+           "5. Support for connecting two commands using one pipe (e.g. ls -l -a | sort)\n"
            "\n");
 }
 
@@ -282,10 +287,10 @@ void m_create(char *buf, const char *maxBuf) {
 
     char *targetBuf = (char *) getNextArg(nameBuf, maxBuf);
 
-    // Prepare the directory
-    char dirBuf[2001];
+    // Prepare the directory // TODO: ADD THIS TO -f and -d as well !!!!!!!!!
+    char dirBuf[2001]; // TODO: When this doesn't exist, do something special maybe?
     strcpy(dirBuf, getNextArg(targetBuf, maxBuf));
-    if (!(*dirBuf)) {
+    if (!(*dirBuf)) { // Get the current directory if DIR was not provided
         char *cwd;
         if ((cwd = getcwd(NULL, 0)) != NULL) {
             strcpy(dirBuf, cwd);
