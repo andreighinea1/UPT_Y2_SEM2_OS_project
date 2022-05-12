@@ -205,9 +205,9 @@ void m_pwd() {
 }
 
 int m_get_type(const char *buf) {
-    // TODO: This doesn't work for symlinks (says regular file)
+    // QUESTION: Should use lstat(), or stat() here?
     struct stat sb;
-    if (stat(jumpWhitespaces(buf + 5), &sb) == -1) {
+    if (lstat(jumpWhitespaces(buf + 5), &sb) == -1) {
         perror("ERROR type");
         help();
         return -1;
@@ -271,7 +271,6 @@ int supportedFileType(const char *buf) {
 
 void m_create(unsigned argc, char *buf, const char *maxBuf) {
     // TODO: Maybe remove extra '/' from path
-    // TODO: Implement the command properly
 //    -> -f  (regular file) -> create -f <NAME> [DIR]{.}\n"
 //    -> -l  (symlink)      -> create -l <NAME> <TARGET> [DIR]{.}\n"
 //    -> -d  (directory)    -> create -d <NAME> [DIR]{.}\n"
