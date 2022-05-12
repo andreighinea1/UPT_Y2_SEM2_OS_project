@@ -382,7 +382,7 @@ void m_create(unsigned argc, char *buf, const char *maxBuf) {
     }
     if (isLink) {
         if (argc < 4 || argc > 5) { // Symlinks have argc={4, 5}
-            fprintf(stderr, "When creating symlinks, argc={4, 5}\n\n");
+            fprintf(stderr, "When creating symlinks, you may only send 3/4 arguments\n\n");
 #ifdef PRINT_HELP_ON_WRONG_INPUT
             m_help();
 #endif
@@ -390,7 +390,7 @@ void m_create(unsigned argc, char *buf, const char *maxBuf) {
         }
     } else {
         if (argc < 3 || argc > 4) { // Files and dirs have argc={3, 4}
-            fprintf(stderr, "When creating files/directories, argc={3, 4}\n\n");
+            fprintf(stderr, "When creating files/directories, you may only send 2/3 arguments\n\n");
 #ifdef PRINT_HELP_ON_WRONG_INPUT
             m_help();
 #endif
@@ -422,15 +422,6 @@ void m_create(unsigned argc, char *buf, const char *maxBuf) {
     // Add the filename to the directory
     strcat(completePathBuf, "/"); // + 1
     strcat(completePathBuf, nameBuf); // + strlen(nameBuf)
-
-    // TEST_PRINT
-//    checkOpenFile();
-//    fout_TEST = stdout;
-//    fprintf(fout_TEST, "TYPE  : |%s|\n", typeBuf);
-//    fprintf(fout_TEST, "NAME  : |%s|\n", nameBuf);
-//    fprintf(fout_TEST, "TARGET: |%s|\n", targetBuf);
-//    fprintf(fout_TEST, "DIR   : |%s|\n\n", dirParam);
-//    fprintf(fout_TEST, "PATH  : |%s|\n\n", completePathBuf);
 
     if (isFile) {
         int fp;
@@ -633,7 +624,7 @@ void parseCommand(unsigned argc, char *buf, const char *maxBuf) {
         }
     } else if (!strcmp(buf, "create")) {
         if (canCallConditionedCommand(3 <= argc && argc <= 5,
-                                      "create may only receive 3/4/5 arguments!\n")) {
+                                      "for create may only receive 2/3/4 arguments!\n")) {
             m_create(argc, buf, maxBuf);
         }
     } else if (!strcmp(buf, "status")) {
@@ -641,7 +632,7 @@ void parseCommand(unsigned argc, char *buf, const char *maxBuf) {
             fprintf(stderr, "status may not receive arguments!\n");
         status();
     } else if (argc >= 1) {
-        if(!strcmp(buf, "run"))
+        if (!strcmp(buf, "run"))
             buf += 4; // Jump over "run "
         pid_status = 0;
         executeExternal(argc, buf, maxBuf);

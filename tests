@@ -1,8 +1,7 @@
 help x
 cd
 cd a b
-cd nu_exista_acest_folder
-cd !!!!
+cd ah8d9as89d8fuh
 pwd a
 type
 type a b
@@ -36,5 +35,19 @@ cd ../..
 type f1
 type d1
 type l1
+
+
+|ls
+|
+
+ls -l -a | sort
+ls -l -a|sort
+ls -l -a| sort
+ls -l -a |sort
+ls | sort
+ls|sort
+ls| sort
+ls |sort
+ls|
 
 exit
