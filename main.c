@@ -49,34 +49,15 @@
 //#endif
 // End for Windows
 
+/* -------------------------------------- FUNCTION DEFINITIONS --------------------------------------- */
 void parseCommand(unsigned argc, char *buf, const char *maxBuf);
 
 void doPrint(unsigned argc, char *buf, const char *maxBuf, const char *stringToPrint);
 
-FILE *fout_TEST = NULL;
+void m_help();
+// -------------------------------------- FUNCTION DEFINITIONS --------------------------------------- */
 
-void help() {
-    printf("This is a shell that can do the following:\n"
-           "1. A promt functionality\n"
-           "2. Execute commands syncronously\n"
-           "3. Built-in commands:\n"
-           "   - help         -> displays this message\n"
-           "   - exit         -> exits the shell\n"
-           "   - cd <DIR>     -> changes the current directory\n"
-           "   - pwd          -> prints the current directory\n"
-           "   - type <ENTRY> -> displays the type of ENTRY (absolute/relative path)\n"
-           "   - create <TYPE> <NAME> [TARGET] [DIR]{.}\n"
-           "      - creates a new entry of the given TYPE, where TYPE may have one of the following values:\n"
-           "            -> -f  (regular file) -> create -f <NAME> [DIR]{.}\n"
-           "            -> -l  (symlink)      -> create -l <NAME> <TARGET> [DIR]{.}\n"
-           "            -> -d  (directory)    -> create -d <NAME> [DIR]{.}\n"
-           "4. run UNIX commands:\n"
-           "   - <COMMAND> [ARG1 ARG2 … ] will execute the given COMMAND with an arbitrary number of arguments\n"
-           "   - status -> displays the exit status of the previously executed command\n"
-           "5. Support for connecting two commands using one pipe (e.g. ls -l -a | sort)\n"
-           "\n");
-}
-
+/* --------------------------------------------- HELPERS --------------------------------------------- */
 const char *jumpWhitespaces(const char *buf) {
     while (isspace(*buf)) // jump over a whitespace
         ++buf;
@@ -191,7 +172,7 @@ char *const *getArgv(unsigned argc, const char *buf, const char *maxBuf) {
     const char **argv = malloc(sizeof(char *) * (argc + 1));
     if (argv == NULL) {
         perror("getArgv - Couldn't allocate memory!!\n");
-        help();
+        m_help();
         exit(EXIT_FAILURE);
     }
 
@@ -208,10 +189,77 @@ char *const *getArgv(unsigned argc, const char *buf, const char *maxBuf) {
     return (char *const *) argv;
 }
 
+
+FILE *fout_TEST = NULL;
+
+void checkOpenFile() {
+    if (fout_TEST == NULL) { // Not yet opened (pointer copied to processes, so it's okay)
+        fout_TEST = fopen("shell.log", "w");
+
+        if (fout_TEST == NULL) {
+            perror("checkOpenFile");
+            exit(EXIT_FAILURE);
+        }
+    }
+}
+
+void doPrint(unsigned argc, char *buf, const char *maxBuf, const char *stringToPrint) {
+    checkOpenFile();
+
+    fprintf(fout_TEST, "%s", stringToPrint);
+
+    fprintf(fout_TEST, "argc=%u; ", argc);
+    if (argc > 0) {
+        char *const *argv = getArgv(argc, buf, maxBuf);
+        if (argv == NULL) {
+            fprintf(fout_TEST, "argv=NULL");
+            return;
+        }
+
+        fprintf(fout_TEST, "argv= ");
+        for (; *argv != NULL; ++argv)
+            fprintf(fout_TEST, "_%s_", *argv);
+    }
+    if (buf && maxBuf) {
+        if (maxBuf > buf)
+            fprintf(fout_TEST, " {[%p, %p], [%c, %c]}", buf, maxBuf, *buf, *(maxBuf - 1));
+        else
+            fprintf(fout_TEST, " {[%p, %p], buf < maxBuf}", buf, maxBuf);
+    }
+    putc('\n', fout_TEST);
+
+    fflush(fout_TEST);
+}
+// --------------------------------------------- HELPERS --------------------------------------------- */
+
+
+/* ---------------------------------------- BUILT-IN COMMANDS ---------------------------------------- */
+void m_help() {
+    printf("This is a shell that can do the following:\n"
+           "1. A promt functionality\n"
+           "2. Execute commands syncronously\n"
+           "3. Built-in commands:\n"
+           "   - m_help         -> displays this message\n"
+           "   - exit         -> exits the shell\n"
+           "   - cd <DIR>     -> changes the current directory\n"
+           "   - pwd          -> prints the current directory\n"
+           "   - type <ENTRY> -> displays the type of ENTRY (absolute/relative path)\n"
+           "   - create <TYPE> <NAME> [TARGET] [DIR]{.}\n"
+           "      - creates a new entry of the given TYPE, where TYPE may have one of the following values:\n"
+           "            -> -f  (regular file) -> create -f <NAME> [DIR]{.}\n"
+           "            -> -l  (symlink)      -> create -l <NAME> <TARGET> [DIR]{.}\n"
+           "            -> -d  (directory)    -> create -d <NAME> [DIR]{.}\n"
+           "4. run UNIX commands:\n"
+           "   - <COMMAND> [ARG1 ARG2 … ] will execute the given COMMAND with an arbitrary number of arguments\n"
+           "   - status -> displays the exit status of the previously executed command\n"
+           "5. Support for connecting two commands using one pipe (e.g. ls -l -a | sort)\n"
+           "\n");
+}
+
 void m_chdir(char *buf) {
     if (chdir(jumpWhitespaces(buf + 3)) == -1) {
         perror("ERROR cd");
-        help();
+        m_help();
     }
 }
 
@@ -222,7 +270,7 @@ void m_pwd() {
         free(cwd);
     } else {
         perror("ERROR pwd");
-        help();
+        m_help();
     }
 }
 
@@ -232,7 +280,7 @@ int m_get_type(const char *buf) {
     // QUESTION: Should use lstat(), or stat() here?
     if (lstat(jumpWhitespaces(buf + 5), &sb) == -1) {
         perror("ERROR type");
-        help();
+        m_help();
         return -1;
     }
     return sb.st_mode & S_IFMT;
@@ -270,45 +318,6 @@ void m_print_type(char *buf) {
     }
 }
 
-void checkOpenFile() {
-    if (fout_TEST == NULL) { // Not yet opened (pointer copied to processes, so it's okay)
-        fout_TEST = fopen("shell.log", "w");
-
-        if (fout_TEST == NULL) {
-            perror("checkOpenFile");
-            exit(EXIT_FAILURE);
-        }
-    }
-}
-
-void doPrint(unsigned argc, char *buf, const char *maxBuf, const char *stringToPrint) {
-    checkOpenFile();
-
-    fprintf(fout_TEST, "%s", stringToPrint);
-
-    fprintf(fout_TEST, "argc=%u; ", argc);
-    if (argc > 0) {
-        char *const *argv = getArgv(argc, buf, maxBuf);
-        if(argv == NULL){
-            fprintf(fout_TEST, "argv=NULL");
-            return;
-        }
-
-        fprintf(fout_TEST, "argv= ");
-        for (; *argv != NULL; ++argv)
-            fprintf(fout_TEST, "_%s_", *argv);
-    }
-    if (buf && maxBuf) {
-        if (maxBuf > buf)
-            fprintf(fout_TEST, " {[%p, %p], [%c, %c]}", buf, maxBuf, *buf, *(maxBuf - 1));
-        else
-            fprintf(fout_TEST, " {[%p, %p], buf < maxBuf}", buf, maxBuf);
-    }
-    putc('\n', fout_TEST);
-
-    fflush(fout_TEST);
-}
-
 void m_create(unsigned argc, char *buf, const char *maxBuf) {
     // TODO: Maybe remove extra '/' from path
 //    -> -f  (regular file) -> create -f <NAME> [DIR]{.}\n"
@@ -322,7 +331,7 @@ void m_create(unsigned argc, char *buf, const char *maxBuf) {
     // Do some checks to make sure the given commands are okay
     if (!(*typeBuf) || !(*nameBuf)) {
         printf("No type/name provided\n\n");
-        help();
+        m_help();
         return;
     }
 
@@ -332,19 +341,19 @@ void m_create(unsigned argc, char *buf, const char *maxBuf) {
 
     if (!isLink && !isFile && !isDir) {
         printf("File type not supported: %s\n\n", typeBuf);
-        help();
+        m_help();
         return;
     }
     if (isLink) {
         if (argc < 4 || argc > 5) { // Symlinks have argc={4, 5}
             printf("When creating symlinks, argc={4, 5}\n\n");
-            help();
+            m_help();
             return;
         }
     } else {
         if (argc < 3 || argc > 4) { // Files and dirs have argc={3, 4}
             printf("When creating files/directories, argc={3, 4}\n\n");
-            help();
+            m_help();
             return;
         }
     }
@@ -385,32 +394,35 @@ void m_create(unsigned argc, char *buf, const char *maxBuf) {
 
     if (isFile) {
         int fp;
-        if ((fp = open(completePathBuf, O_RDWR | O_CREAT, S_IRUSR | S_IRGRP | S_IROTH)) == -1) {
+        if ((fp = open(completePathBuf, O_RDWR | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) == -1) {
             perror("Could not create file");
-            help();
+            m_help();
             return;
         }
         if (close(fp) == -1) {
             perror("Could not close file");
-            help();
+            m_help();
             return;
         }
     } else if (isDir) {
         if (mkdir(completePathBuf, S_IRWXU | S_IRWXG | S_IRWXO) == -1) {
             perror("Could not create directory");
-            help();
+            m_help();
             return;
         }
     } else { // isLink
         if (symlink(targetBuf, completePathBuf) == -1) {
             perror("Could not create a symlink");
-            help();
+            m_help();
             return;
         }
     }
 }
+// ---------------------------------------- BUILT-IN COMMANDS ---------------------------------------- */
 
-int pid_status;
+
+/* --------------------------------------- PROCESSES AND PIPES --------------------------------------- */
+int pid_status; // TODO IMPORTANT: Make this work properly
 int isChild;
 
 void execCommand(char *const *argv) {
@@ -424,7 +436,7 @@ void execCommand(char *const *argv) {
     perror(s);
 
     putchar('\n');
-    help();
+    m_help();
     exit(EXIT_FAILURE);
 }
 
@@ -445,7 +457,7 @@ void executeExternal(unsigned argc, char *buf, const char *maxBuf) {
     if ((pid = fork()) < 0) {
         free((char **) argv);
         perror("Couldn't start a process for exec external");
-        help();
+        m_help();
         return;
     }
     if (pid == 0) // Child code
@@ -482,7 +494,7 @@ void executePipe(unsigned argc1, char *buf1, const char *maxBuf1,
     // CREATE FIRST PROCESS (STDIN -> command1)
     if ((pid = fork()) < 0) {
         perror("Couldn't start a process for PIPE");
-        help();
+        m_help();
         exit(EXIT_FAILURE);
     }
     if (pid == 0) { // Child code (STDIN -> command1)
@@ -516,7 +528,7 @@ void executePipe(unsigned argc1, char *buf1, const char *maxBuf1,
     // CREATE SECOND PROCESS (command1 -> command2)
     if ((pid = fork()) < 0) {
         perror("Couldn't start a process for PIPE");
-        help();
+        m_help();
         exit(EXIT_FAILURE);
     }
     if (pid == 0) { // Child code (command1 -> command2)
@@ -561,6 +573,8 @@ void status() {
         printf("continued\n");
     }
 }
+// --------------------------------------- PROCESSES AND PIPES --------------------------------------- */
+
 
 void parseCommand(unsigned argc, char *buf, const char *maxBuf) {
     if (argc == 0)
@@ -573,7 +587,7 @@ void parseCommand(unsigned argc, char *buf, const char *maxBuf) {
 
 //    pid_status = 0; // TODO: Check if this is correct
     if (argc == 1 && !strcmp(buf, "help")) { // Place this here as well to avoid going into executeExternal from "help"
-        help();
+        m_help();
         pid_status = 0;
     } else if (!strcmp(buf, "exit")) {
         exit(0);
@@ -583,7 +597,7 @@ void parseCommand(unsigned argc, char *buf, const char *maxBuf) {
     } else if (!strcmp(buf, "pwd")) {
         if (argc != 1) {
             printf("pwd may not receive arguments!\n");
-            help();
+            m_help();
         } else {
             pid_status = 0;
             m_pwd();
@@ -591,7 +605,7 @@ void parseCommand(unsigned argc, char *buf, const char *maxBuf) {
     } else if (!strcmp(buf, "type")) {
         if (argc != 2) {
             printf("type may only receive 1 argument!\n");
-            help();
+            m_help();
         } else {
             pid_status = 0;
             m_print_type(buf);
@@ -599,7 +613,7 @@ void parseCommand(unsigned argc, char *buf, const char *maxBuf) {
     } else if (!strcmp(buf, "create")) {
         if (argc < 3 || argc > 5) {
             printf("create may only receive 3/4/5 arguments!\n");
-            help();
+            m_help();
         } else {
             pid_status = 0;
             m_create(argc, buf, maxBuf);
@@ -607,7 +621,7 @@ void parseCommand(unsigned argc, char *buf, const char *maxBuf) {
     } else if (!strcmp(buf, "status")) {
         if (argc != 1) {
             printf("status may not receive arguments!\n");
-            help();
+            m_help();
         } else {
             status();
         }
