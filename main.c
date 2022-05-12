@@ -256,7 +256,6 @@ void perrorExtra(const char *format, const char *extra) {
 
 
 /* ---------------------------------------- BUILT-IN COMMANDS ---------------------------------------- */
-// TODO IMPORTANT: Maybe implement "run"??
 void m_help() {
     pid_status = 0;
     printf("This is a shell that can do the following:\n"
@@ -459,12 +458,12 @@ void m_create(unsigned argc, char *buf, const char *maxBuf) {
 
 
 /* --------------------------------------- PROCESSES AND PIPES --------------------------------------- */
-void execCommand(char *const *argv) {
+void execCommand(char *const *argv, const char *buf) {
     execvp(argv[0], argv);
 
     // Error
     free((char **) argv);
-    perrorExtra("Couldn't execute command %s", argv[0]);
+    perrorExtra("Couldn't execute command %s", buf);
     putchar('\n');
     exit(EXIT_FAILURE);
 }
@@ -479,7 +478,7 @@ void executeExternal(unsigned argc, char *buf, const char *maxBuf) {
 
     if (isChild != 0) // Child code, comes from PIPE, already have different process for it
     {
-        execCommand(argv);
+        execCommand(argv, buf);
     }
 
     pid_t pid, w;
@@ -490,7 +489,7 @@ void executeExternal(unsigned argc, char *buf, const char *maxBuf) {
     }
     if (pid == 0) // Child code
     {
-        execCommand(argv);
+        execCommand(argv, buf);
     }
     w = waitpid(pid, &pid_status, WUNTRACED | WCONTINUED);
     if (w == -1) {
@@ -642,6 +641,8 @@ void parseCommand(unsigned argc, char *buf, const char *maxBuf) {
             fprintf(stderr, "status may not receive arguments!\n");
         status();
     } else if (argc >= 1) {
+        if(!strcmp(buf, "run"))
+            buf += 4; // Jump over "run "
         pid_status = 0;
         executeExternal(argc, buf, maxBuf);
     }
