@@ -259,10 +259,10 @@ void perrorExtra(const char *format, const char *extra) {
 void m_help() {
     pid_status = 0;
     printf("This is a shell that can do the following:\n"
-           "1. A promt functionality\n"
-           "2. Execute commands syncronously\n"
+           "1. A prompt functionality\n"
+           "2. Execute commands synchronously\n"
            "3. Built-in commands:\n"
-           "   - m_help         -> displays this message\n"
+           "   - help         -> displays this message\n"
            "   - exit         -> exits the shell\n"
            "   - cd <DIR>     -> changes the current directory\n"
            "   - pwd          -> prints the current directory\n"
