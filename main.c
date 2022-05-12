@@ -51,6 +51,10 @@
 
 void parseCommand(unsigned argc, char *buf, const char *maxBuf);
 
+void doPrint(unsigned argc, char *buf, const char *maxBuf, const char *stringToPrint);
+
+FILE *fout_TEST = NULL;
+
 void help() {
     printf("This is a shell that can do the following:\n"
            "1. A promt functionality\n"
@@ -80,38 +84,66 @@ const char *jumpWhitespaces(const char *buf) {
     return buf;
 }
 
+int startsWith(const char *buf, char c) {
+    buf = jumpWhitespaces(buf);
+    return *buf == c;
+}
+
 // "create    tip nume t     d_"
 // "create_   tip_nume_t_    d_"  // _ is \0
 void parseBuf(char *buf,
               unsigned *argc1, char **buf1, const char **maxBuf1,
               unsigned *argc2, char **buf2, const char **maxBuf2) {
-    // TODO: "ls -a|sort" -> should work such a case
     *argc1 = 0;
     *argc2 = 0;
     unsigned *argc = argc1; // Start with argc1
 
     buf = (char *) jumpWhitespaces(buf); // Jump if there are whitespaces at the start of the buffer
+    if (startsWith(buf, '|')) {
+        printf("-bash: syntax error near unexpected token `|'\n");
+        return;
+    }
     *buf1 = buf; // The first buffer starts after those jumped whitespaces
 
-    char *last0 = NULL, *lastChar = NULL;
+//    char *last0 = NULL;
+    char *lastChar = NULL;
     char hadSpace = 1, hadPipe = 0;
     while (*buf) {
         if (*buf == '|') {
-            if (*(buf + 1) == '\0') { // If it ends with a pipe, we should just remove it
+            if (*(buf + 1) == '\0') { // If it ends with a pipe, we should just remove and ignore it
                 *buf = '\0';
+                break;
             }
+
+            if (hadPipe) {
+                fprintf(stderr, "ERROR: shell doesn't support more than 1 PIPEs");
+
+                *argc1 = 0;
+                *argc2 = 0;
+                *buf1 = NULL;
+                *buf2 = NULL;
+                *maxBuf1 = NULL;
+                *maxBuf2 = NULL;
+                return;
+            }
+            *buf = '\0'; // To know when to end command1
 
             hadSpace = 1; // Consider '|' as space as well
             hadPipe = 1;
-            *maxBuf1 = last0; // Set the end of the first one to be at the last 0 placed
+            *maxBuf1 = lastChar + 1; // Set the end of the first one to be after the lastChar placed before this |
 
             buf = (char *) jumpWhitespaces(buf + 1); // Jump over the possible starting whitespaces
             *buf2 = buf; // The second buffer starts after those jumped whitespaces
 
             argc = argc2; // Switched argc
+
+            // TEST_PRINT
+//            doPrint(*argc1, *buf1, *maxBuf1, "command1: ");
+//            fprintf(fout_TEST, "buf2=%s; maxBuf1_c=%c\n", *buf2, **maxBuf1);
+//            fflush(fout_TEST);
         } else if (isspace(*buf)) {
             hadSpace = 1;
-            last0 = buf;
+//            last0 = buf;
 
             *buf = '\0';
             buf = (char *) jumpWhitespaces(buf + 1); // Jump over the rest of the whitespaces
@@ -129,22 +161,12 @@ void parseBuf(char *buf,
     if (*maxBuf1 == NULL) {
         *maxBuf1 = lastChar + 1; // including the last '\0'
     } else if (hadPipe) {
-        if (hadSpace) {
-            *maxBuf2 = last0; // including the last '\0'
-        } else {
-            *maxBuf2 = lastChar + 1; // including the last '\0'
-        }
+        *maxBuf2 = lastChar + 1; // including the last '\0'
     }
 
-//    putchar('\n');
-//    putchar('\n');
-//    putchar('_');
-//    for (buf = *buf1; buf < *maxBuf1; ++buf) {
-//        putchar(*buf);
-//    }
-//    putchar('_');
-//    putchar('\n');
-//    putchar('\n');
+    // TEST_PRINT
+//    doPrint(*argc1, *buf1, *maxBuf1, "command1: ");
+//    doPrint(*argc2, *buf2, *maxBuf2, "command2: ");
 }
 
 // "create_   tip_nume_t_    d_"
@@ -163,7 +185,7 @@ const char *getNextArg(const char *buf, const char *maxBuf) {
 }
 
 char *const *getArgv(unsigned argc, const char *buf, const char *maxBuf) {
-    if (argc == 0)
+    if (argc <= 0)
         return NULL;
 
     const char **argv = malloc(sizeof(char *) * (argc + 1));
@@ -205,8 +227,9 @@ void m_pwd() {
 }
 
 int m_get_type(const char *buf) {
-    // QUESTION: Should use lstat(), or stat() here?
     struct stat sb;
+
+    // QUESTION: Should use lstat(), or stat() here?
     if (lstat(jumpWhitespaces(buf + 5), &sb) == -1) {
         perror("ERROR type");
         help();
@@ -219,19 +242,33 @@ void m_print_type(char *buf) {
     int type = m_get_type(buf);
     if (type != -1) {
         switch (type) {
-            case S_IFBLK:  printf("block device\n");            break;
-            case S_IFCHR:  printf("character device\n");        break;
-            case S_IFDIR:  printf("directory\n");               break;
-            case S_IFIFO:  printf("FIFO/pipe\n");               break;
-            case S_IFLNK:  printf("symlink\n");                 break;
-            case S_IFREG:  printf("regular file\n");            break;
-            case S_IFSOCK: printf("socket\n");                  break;
-            default:       printf("unknown?\n");                break;
+            case S_IFBLK:
+                printf("block device\n");
+                break;
+            case S_IFCHR:
+                printf("character device\n");
+                break;
+            case S_IFDIR:
+                printf("directory\n");
+                break;
+            case S_IFIFO:
+                printf("FIFO/pipe\n");
+                break;
+            case S_IFLNK:
+                printf("symlink\n");
+                break;
+            case S_IFREG:
+                printf("regular file\n");
+                break;
+            case S_IFSOCK:
+                printf("socket\n");
+                break;
+            default:
+                printf("unknown?\n");
+                break;
         }
     }
 }
-
-FILE *fout_TEST = NULL;
 
 void checkOpenFile() {
     if (fout_TEST == NULL) { // Not yet opened (pointer copied to processes, so it's okay)
@@ -252,21 +289,24 @@ void doPrint(unsigned argc, char *buf, const char *maxBuf, const char *stringToP
     fprintf(fout_TEST, "argc=%u; ", argc);
     if (argc > 0) {
         char *const *argv = getArgv(argc, buf, maxBuf);
+        if(argv == NULL){
+            fprintf(fout_TEST, "argv=NULL");
+            return;
+        }
+
         fprintf(fout_TEST, "argv= ");
         for (; *argv != NULL; ++argv)
             fprintf(fout_TEST, "_%s_", *argv);
     }
-    if (maxBuf > buf)
-        fprintf(fout_TEST, " {[%p, %p], [%c, %c]}", buf, maxBuf, *buf, *(maxBuf - 1));
-    else
-        fprintf(fout_TEST, " {[%p, %p], buf < maxBuf}", buf, maxBuf);
+    if (buf && maxBuf) {
+        if (maxBuf > buf)
+            fprintf(fout_TEST, " {[%p, %p], [%c, %c]}", buf, maxBuf, *buf, *(maxBuf - 1));
+        else
+            fprintf(fout_TEST, " {[%p, %p], buf < maxBuf}", buf, maxBuf);
+    }
     putc('\n', fout_TEST);
 
     fflush(fout_TEST);
-}
-
-int supportedFileType(const char *buf) {
-    return !strcmp(buf, "-f") || !strcmp(buf, "-l") || !strcmp(buf, "-d");
 }
 
 void m_create(unsigned argc, char *buf, const char *maxBuf) {
@@ -378,28 +418,23 @@ void execCommand(char *const *argv) {
 
     // Error
     free((char **) argv);
-    perror("Couldn't execute command");
+
+    char s[100];
+    sprintf(s, "Couldn't execute command %s", argv[0]);
+    perror(s);
+
     putchar('\n');
     help();
     exit(EXIT_FAILURE);
 }
 
 void executeExternal(unsigned argc, char *buf, const char *maxBuf) {
-    // TODO: Connect stderr of processes
     char *const *argv = getArgv(argc, buf, maxBuf);
     if (argv == NULL) {
         // ERROR_PRINT
         doPrint(argc, buf, maxBuf, "argv == NULL\n");
         return;
     }
-
-    // TEST_PRINT
-//    checkOpenFile();
-//    fprintf(fout_TEST, "isChild INSIDE=%u\n", isChild);
-//    for (unsigned i = 0; i < argc; i++)
-//        fprintf(fout_TEST, "_%s\n", argv[i]);
-//    fprintf(fout_TEST, "\n");
-//    fflush(fout_TEST);
 
     if (isChild != 0) // Child code, comes from PIPE, already have different process for it
     {
@@ -428,7 +463,10 @@ void executeExternal(unsigned argc, char *buf, const char *maxBuf) {
 
 void executePipe(unsigned argc1, char *buf1, const char *maxBuf1,
                  unsigned argc2, char *buf2, const char *maxBuf2) {
-    // TODO: Connect stderr of processes
+    // TEST_PRINT
+//    doPrint(argc1, buf1, maxBuf1, "command1");
+//    doPrint(argc2, buf2, maxBuf2, "command2");
+
     int pfd1[2];
     pid_t pid, w;
 
