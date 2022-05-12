@@ -9,7 +9,7 @@
 #include <unistd.h>
 #include <sys/wait.h>
 
-#define BUFF_SIZE 10000
+#define BUFF_SIZE 10240
 
 // For Windows
 //#if (defined(_WIN32) || defined(__WIN32__))
@@ -52,7 +52,6 @@
 void parseCommand(unsigned argc, char *buf, const char *maxBuf);
 
 void help() {
-    // TODO: Update with new stuff
     printf("This is a shell that can do the following:\n"
            "1. A promt functionality\n"
            "2. Execute commands syncronously\n"
@@ -62,11 +61,11 @@ void help() {
            "   - cd <DIR>     -> changes the current directory\n"
            "   - pwd          -> prints the current directory\n"
            "   - type <ENTRY> -> displays the type of ENTRY (absolute/relative path)\n"
-           "   - create <TYPE> <NAME> [TARGET] [DIR]\n"
+           "   - create <TYPE> <NAME> [TARGET] [DIR]{.}\n"
            "      - creates a new entry of the given TYPE, where TYPE may have one of the following values:\n"
-           "            -> -f  (regular file) -> no TARGET or DIR\n"
-           "            -> -l  (symlink) -> <TARGET>, [DIR]{.}\n"
-           "            -> -d  (directory) -> no TARGET or DIR\n"
+           "            -> -f  (regular file) -> create -f <NAME> [DIR]{.}\n"
+           "            -> -l  (symlink)      -> create -l <NAME> <TARGET> [DIR]{.}\n"
+           "            -> -d  (directory)    -> create -d <NAME> [DIR]{.}\n"
            "4. run UNIX commands:\n"
            "   - <COMMAND> [ARG1 ARG2 … ] will execute the given COMMAND with an arbitrary number of arguments\n"
            "   - status -> displays the exit status of the previously executed command\n"
@@ -127,13 +126,12 @@ void parseBuf(char *buf,
         }
     }
 
-    if(*maxBuf1 == NULL) {
+    if (*maxBuf1 == NULL) {
         *maxBuf1 = lastChar + 1; // including the last '\0'
-    }
-    else if(hadPipe){
-        if(hadSpace) {
+    } else if (hadPipe) {
+        if (hadSpace) {
             *maxBuf2 = last0; // including the last '\0'
-        } else{
+        } else {
             *maxBuf2 = lastChar + 1; // including the last '\0'
         }
     }
@@ -158,7 +156,7 @@ const char *getNextArg(const char *buf, const char *maxBuf) {
         return buf; // The last one, nothing afterwards, end with '\0'
     if (buf > maxBuf) {
         printf("buf > maxBuf; maxBuf is not calculated correctly!!\n");
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
 
     return jumpWhitespaces(buf + 1);
@@ -169,10 +167,10 @@ char *const *getArgv(unsigned argc, const char *buf, const char *maxBuf) {
         return NULL;
 
     const char **argv = malloc(sizeof(char *) * (argc + 1));
-    if(argv == NULL){
+    if (argv == NULL) {
         perror("getArgv - Couldn't allocate memory!!\n");
         help();
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
 
     const char *arg;
@@ -197,9 +195,10 @@ void m_chdir(char *buf) {
 
 void m_pwd() {
     char *cwd;
-    if ((cwd = getcwd(NULL, 0)) != NULL)
+    if ((cwd = getcwd(NULL, 0)) != NULL) {
         printf("%s\n", cwd);
-    else {
+        free(cwd);
+    } else {
         perror("ERROR pwd");
         help();
     }
@@ -218,7 +217,7 @@ int m_get_type(const char *buf) {
 
 void m_print_type(char *buf) {
     int type = m_get_type(buf);
-    if(type != -1) {
+    if (type != -1) {
         switch (type) {
             case S_IFBLK:  printf("block device\n");            break;
             case S_IFCHR:  printf("character device\n");        break;
@@ -234,30 +233,30 @@ void m_print_type(char *buf) {
 
 FILE *fout_TEST = NULL;
 
-void checkOpenFile(){
-    if(fout_TEST == NULL) { // Not yet opened (pointer copied to processes, so it's okay)
+void checkOpenFile() {
+    if (fout_TEST == NULL) { // Not yet opened (pointer copied to processes, so it's okay)
         fout_TEST = fopen("shell.log", "w");
 
-        if(fout_TEST == NULL) {
+        if (fout_TEST == NULL) {
             perror("checkOpenFile");
-            exit(-1);
+            exit(EXIT_FAILURE);
         }
     }
 }
 
-void doPrint(unsigned argc, char *buf, const char *maxBuf, const char* stringToPrint) {
+void doPrint(unsigned argc, char *buf, const char *maxBuf, const char *stringToPrint) {
     checkOpenFile();
 
     fprintf(fout_TEST, "%s", stringToPrint);
 
     fprintf(fout_TEST, "argc=%u; ", argc);
-    if(argc > 0) {
+    if (argc > 0) {
         char *const *argv = getArgv(argc, buf, maxBuf);
         fprintf(fout_TEST, "argv= ");
         for (; *argv != NULL; ++argv)
             fprintf(fout_TEST, "_%s_", *argv);
     }
-    if(maxBuf > buf)
+    if (maxBuf > buf)
         fprintf(fout_TEST, " {[%p, %p], [%c, %c]}", buf, maxBuf, *buf, *(maxBuf - 1));
     else
         fprintf(fout_TEST, " {[%p, %p], buf < maxBuf}", buf, maxBuf);
@@ -270,49 +269,84 @@ int supportedFileType(const char *buf) {
     return !strcmp(buf, "-f") || !strcmp(buf, "-l") || !strcmp(buf, "-d");
 }
 
-void m_create(char *buf, const char *maxBuf) {
-    // TODO: When -l, argc=[4, 5], with dir being optional, otherwise, argc=[1, 3]
+void m_create(unsigned argc, char *buf, const char *maxBuf) {
+    // TODO: Maybe remove extra '/' from path
+    // TODO: Implement the command properly
+//    -> -f  (regular file) -> create -f <NAME> [DIR]{.}\n"
+//    -> -l  (symlink)      -> create -l <NAME> <TARGET> [DIR]{.}\n"
+//    -> -d  (directory)    -> create -d <NAME> [DIR]{.}\n"
+
+    // Get the first 2 params (that should be present for all the commands)
     char *typeBuf = (char *) jumpWhitespaces(buf + 7);
-    char *nameBuf = (char *) getNextArg(typeBuf, maxBuf);
+    char *nameBuf = (char *) getNextArg(typeBuf, maxBuf); // TODO: If '/' in name, create directories until that point
+
+    // Do some checks to make sure the given commands are okay
     if (!(*typeBuf) || !(*nameBuf)) {
         printf("No type/name provided\n\n");
         help();
         return;
     }
-    if (!supportedFileType(typeBuf)) {
-        printf("File type not supported\n\n");
+
+    int isLink = !strcmp(typeBuf, "-l");
+    int isFile = !strcmp(typeBuf, "-f");
+    int isDir = !strcmp(typeBuf, "-d");
+
+    if (!isLink && !isFile && !isDir) {
+        printf("File type not supported: %s\n\n", typeBuf);
         help();
         return;
     }
-
-    char *targetBuf = (char *) getNextArg(nameBuf, maxBuf);
-
-    // Prepare the directory // TODO: ADD THIS TO -f and -d as well !!!!!!!!!
-    char dirBuf[2001]; // TODO: When this doesn't exist, do something special maybe?
-    strcpy(dirBuf, getNextArg(targetBuf, maxBuf));
-    if (!(*dirBuf)) { // Get the current directory if DIR was not provided
-        char *cwd;
-        if ((cwd = getcwd(NULL, 0)) != NULL) {
-            strcpy(dirBuf, cwd);
-        } else {
-            perror("ERROR with getting current directory");
+    if (isLink) {
+        if (argc < 4 || argc > 5) { // Symlinks have argc={4, 5}
+            printf("When creating symlinks, argc={4, 5}\n\n");
+            help();
+            return;
+        }
+    } else {
+        if (argc < 3 || argc > 4) { // Files and dirs have argc={3, 4}
+            printf("When creating files/directories, argc={3, 4}\n\n");
+            help();
+            return;
         }
     }
 
+    // Get the next 1-2 params
+    char *currentArg = nameBuf;
+    char *targetBuf = NULL;
+    if (isLink) {
+        targetBuf = (char *) getNextArg(currentArg, maxBuf);
+        currentArg = targetBuf;
+    }
+    char *dirParam = (char *) getNextArg(currentArg, maxBuf);
+
+    // Init dir buffer
+    // path + '/' + name + make_sure (dirParam can be of length 0)
+    const unsigned pathSize = strlen(dirParam) + 1 + strlen(nameBuf) + 10;
+    char completePathBuf[pathSize];
+
+    // Add the current directory first then
+    if (*dirParam == '\0') {
+        strcpy(completePathBuf, "."); // the +10 helps here as well
+    } else {
+        strcpy(completePathBuf, dirParam); // strlen(dirParam)
+    }
+
     // Add the filename to the directory
-    strcat(dirBuf, "/");
-    strcat(dirBuf, nameBuf);
+    strcat(completePathBuf, "/"); // + 1
+    strcat(completePathBuf, nameBuf); // + strlen(nameBuf)
 
     // TEST_PRINT
 //    checkOpenFile();
+//    fout_TEST = stdout;
 //    fprintf(fout_TEST, "TYPE  : |%s|\n", typeBuf);
 //    fprintf(fout_TEST, "NAME  : |%s|\n", nameBuf);
 //    fprintf(fout_TEST, "TARGET: |%s|\n", targetBuf);
-//    fprintf(fout_TEST, "DIR   : |%s|\n\n", dirBuf);
+//    fprintf(fout_TEST, "DIR   : |%s|\n\n", dirParam);
+//    fprintf(fout_TEST, "PATH  : |%s|\n\n", completePathBuf);
 
-    if (!strcmp(typeBuf, "-f")) {
+    if (isFile) {
         int fp;
-        if ((fp = open(dirBuf, O_RDWR | O_CREAT, S_IRUSR | S_IRGRP | S_IROTH)) == -1) {
+        if ((fp = open(completePathBuf, O_RDWR | O_CREAT, S_IRUSR | S_IRGRP | S_IROTH)) == -1) {
             perror("Could not create file");
             help();
             return;
@@ -322,14 +356,14 @@ void m_create(char *buf, const char *maxBuf) {
             help();
             return;
         }
-    } else if (!strcmp(typeBuf, "-d")) {
-        if (mkdir(dirBuf, S_IRWXU | S_IRWXG | S_IRWXO) == -1) {
+    } else if (isDir) {
+        if (mkdir(completePathBuf, S_IRWXU | S_IRWXG | S_IRWXO) == -1) {
             perror("Could not create directory");
             help();
             return;
         }
-    } else { // -l
-        if (symlink(targetBuf, dirBuf) == -1) {
+    } else { // isLink
+        if (symlink(targetBuf, completePathBuf) == -1) {
             perror("Could not create a symlink");
             help();
             return;
@@ -345,10 +379,10 @@ void execCommand(char *const *argv) {
 
     // Error
     free((char **) argv);
-    perror("Couldn't start a process for exec");
+    perror("Couldn't execute command");
     putchar('\n');
     help();
-    exit(-1);
+    exit(EXIT_FAILURE);
 }
 
 void executeExternal(unsigned argc, char *buf, const char *maxBuf) {
@@ -396,29 +430,23 @@ void executeExternal(unsigned argc, char *buf, const char *maxBuf) {
 void executePipe(unsigned argc1, char *buf1, const char *maxBuf1,
                  unsigned argc2, char *buf2, const char *maxBuf2) {
     // TODO: Connect stderr of processes
-    // TODO: "ls a | sort" -> when executing this command, the command "ls a" is executed first, then "ls"
     int pfd1[2];
-    int pfd2[2];
     pid_t pid, w;
 
     // CREATE PIPES
     // command1 | command2
-    if (pipe(pfd1) < 0) { // STDIN -> command1
+    if (pipe(pfd1) < 0) { // command1 -> command2
         perror("Pipe creation failed");
-        exit(-1);
-    }
-    if (pipe(pfd2) < 0) { // command1 -> command2
-        perror("Pipe creation failed");
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
     // In parent:
-    // command2 -> STDOUT
+    // command2 -> STDOUT (done automatically)
 
     // CREATE FIRST PROCESS (STDIN -> command1)
     if ((pid = fork()) < 0) {
         perror("Couldn't start a process for PIPE");
         help();
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
     if (pid == 0) { // Child code (STDIN -> command1)
         isChild = 1;
@@ -428,11 +456,11 @@ void executePipe(unsigned argc1, char *buf1, const char *maxBuf1,
 
         // Close unused PIPEs
         close(pfd1[0]); // close the reading end of the pipe, child WRITES
-        close(pfd2[0]);
-        close(pfd2[1]);
+
+        // Move output from command1
+        dup2(pfd1[1], 1); // command1 -> PIPE1
 
         // Execute the command1
-        dup2(pfd1[1], 1); // command1 -> PIPE1
         parseCommand(argc1, buf1, maxBuf1);
 
         // Close the rest of the pipes
@@ -452,7 +480,7 @@ void executePipe(unsigned argc1, char *buf1, const char *maxBuf1,
     if ((pid = fork()) < 0) {
         perror("Couldn't start a process for PIPE");
         help();
-        exit(-1);
+        exit(EXIT_FAILURE);
     }
     if (pid == 0) { // Child code (command1 -> command2)
         isChild = 1;
@@ -461,18 +489,15 @@ void executePipe(unsigned argc1, char *buf1, const char *maxBuf1,
 //        doPrint(argc2, buf2, maxBuf2, "command1 -> command2: ");
 
         // Close unused PIPEs
-        close(pfd2[0]); // close the reading end of the pipe, child WRITES
         close(pfd1[1]); // I think it was closed in the parent already
 
         // Get input for command2
         dup2(pfd1[0], 0); // PIPE1 -> command2
 
         // Execute the command2
-        dup2(pfd2[1], 1); // command2 -> PIPE2
         parseCommand(argc2, buf2, maxBuf2);
 
         // Close the rest of the pipes
-        close(pfd2[1]);
         close(pfd1[0]);
 
         // Done
@@ -480,18 +505,11 @@ void executePipe(unsigned argc1, char *buf1, const char *maxBuf1,
     }
     // Parent
     close(pfd1[0]); // close the READING end of the first pipe
-    close(pfd2[1]); // close the WRITING end of the second pipe
     w = waitpid(pid, &pid_status, WUNTRACED | WCONTINUED);
     if (w == -1) {
         perror("waitpid2");
         exit(EXIT_FAILURE);
     }
-
-    char concat_str[BUFF_SIZE];
-    read(pfd2[0], concat_str, BUFF_SIZE);
-    printf("%s", concat_str);
-
-    close(pfd2[0]); // close the reading end of the pipe as well
 }
 
 void status() {
@@ -508,26 +526,29 @@ void status() {
 }
 
 void parseCommand(unsigned argc, char *buf, const char *maxBuf) {
-    if(argc == 0)
+    if (argc == 0)
         return;
-    if(argc < 0 || buf == NULL || maxBuf == NULL) {
+    if (argc < 0 || buf == NULL || maxBuf == NULL) {
         // ERROR_PRINT
         doPrint(argc, buf, maxBuf, "parseCommand - early exit:\n");
         return;
     }
 
-    pid_status = 0; // TODO: Check if this is correct
+//    pid_status = 0; // TODO: Check if this is correct
     if (argc == 1 && !strcmp(buf, "help")) { // Place this here as well to avoid going into executeExternal from "help"
         help();
+        pid_status = 0;
     } else if (!strcmp(buf, "exit")) {
         exit(0);
     } else if (argc == 2 && !strcmp(buf, "cd")) { // I can use strcmp because I preprocessed the buf with '\0'
+        pid_status = 0;
         m_chdir(buf);
     } else if (!strcmp(buf, "pwd")) {
         if (argc != 1) {
             printf("pwd may not receive arguments!\n");
             help();
         } else {
+            pid_status = 0;
             m_pwd();
         }
     } else if (!strcmp(buf, "type")) {
@@ -535,14 +556,16 @@ void parseCommand(unsigned argc, char *buf, const char *maxBuf) {
             printf("type may only receive 1 argument!\n");
             help();
         } else {
+            pid_status = 0;
             m_print_type(buf);
         }
     } else if (!strcmp(buf, "create")) {
-        if (argc != 3 && argc != 5) {
-            printf("create may only receive 3 or 5 arguments!\n");
+        if (argc < 3 || argc > 5) {
+            printf("create may only receive 3/4/5 arguments!\n");
             help();
         } else {
-            m_create(buf, maxBuf);
+            pid_status = 0;
+            m_create(argc, buf, maxBuf);
         }
     } else if (!strcmp(buf, "status")) {
         if (argc != 1) {
@@ -552,26 +575,30 @@ void parseCommand(unsigned argc, char *buf, const char *maxBuf) {
             status();
         }
     } else if (argc >= 1) {
+        pid_status = 0;
         executeExternal(argc, buf, maxBuf);
     }
 }
 
 _Noreturn void start_shell() {
-    char buf[BUFF_SIZE];
+    char buf[BUFF_SIZE + 1];
     char *cwd;
     ssize_t len;
 
     while (1) {
         // TODO: Flush stdout, stderr before start of shell ???
-//        fflush(stderr); // Had some issues with this one
+        fflush(stderr); // Had some issues with this one
 //        fflush(stdout);
 
-        if ((cwd = getcwd(NULL, 0)) != NULL)
-            printf("%s > ", cwd);
-        else
-            printf("shell > ");
+        if ((cwd = getcwd(NULL, 0)) != NULL) {
+            printf("%s> ", cwd);
+            free(cwd);
+        } else {
+            printf("shell> ");
+        }
         fflush(stdout);
 
+        // TODO: Add a functionality to separate whole commands by '\n' (for bulk testing)
         if ((len = read(STDIN_FILENO, buf, BUFF_SIZE)) > 0) {
             buf[--len] = 0;
 
@@ -584,11 +611,10 @@ _Noreturn void start_shell() {
                      &argc1, &buf1, &maxBuf1,
                      &argc2, &buf2, &maxBuf2);
 
-            if(argc2 > 0) { // This means we have arguments after the pipe as well
+            if (argc2 > 0) { // This means we have arguments after the pipe as well
                 executePipe(argc1, buf1, maxBuf1,
                             argc2, buf2, maxBuf2);
-            }
-            else {
+            } else {
                 parseCommand(argc1, buf, maxBuf1);
             }
         }

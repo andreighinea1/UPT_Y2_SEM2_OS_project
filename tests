@@ -1,0 +1,20 @@
+create -f
+create -l link
+create -d
+
+create -d testDir
+create -d testDir/d1
+create -d d11 testDir/d1
+cd testDir/d1
+create -f d1/f1 ..
+cd ../../testDir
+
+create -f f1
+create -f d1/f2
+create -f f3 d1
+create -f f2 .
+
+create -l l1 f1 .
+create -l l2 f2
+cd d1/d11
+create -l ../l3 ../f1 ..
