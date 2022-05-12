@@ -8,6 +8,7 @@
 #include <sys/wait.h>
 
 #define BUFF_SIZE 10240
+#define MY_CUSTOM_EXIT_STATUS 0x180
 #define PRINT_HELP_ON_WRONG_INPUT
 
 // For Windows
@@ -49,6 +50,7 @@
 // End for Windows
 
 /* -------------------------------------- FUNCTION DEFINITIONS --------------------------------------- */
+
 void parseCommand(unsigned argc, char *buf, const char *maxBuf);
 
 void doPrint(unsigned argc, char *buf, const char *maxBuf, const char *stringToPrint);
@@ -57,12 +59,15 @@ void m_help();
 // -------------------------------------- FUNCTION DEFINITIONS --------------------------------------- */
 
 /* ------------------------------------------- GLOBAL VARS ------------------------------------------- */
-FILE *fout_TEST = NULL;
-int pid_status; // TODO IMPORTANT: Make this work properly
-int isChild;
+
+FILE *fout_TEST = NULL; // For debugging
+int pid_status;
+int isChild; // Used to determine if we should spawn a new process or not (if this is already a child process)
 // ------------------------------------------- GLOBAL VARS ------------------------------------------- */
 
 /* --------------------------------------------- HELPERS --------------------------------------------- */
+
+// return a pointer to the first non-space char in buf
 const char *jumpWhitespaces(const char *buf) {
     while (isspace(*buf)) // jump over a whitespace
         ++buf;
@@ -70,11 +75,13 @@ const char *jumpWhitespaces(const char *buf) {
     return buf;
 }
 
+// Does buf start with c?
 int startsWith(const char *buf, char c) {
     buf = jumpWhitespaces(buf);
     return *buf == c;
 }
 
+// e.g.
 // "create    tip nume t     d_"
 // "create_   tip_nume_t_    d_"  // _ is \0
 void parseBuf(char *buf,
@@ -96,13 +103,11 @@ void parseBuf(char *buf,
     char hadSpace = 1, hadPipe = 0;
     while (*buf) {
         if (*buf == '|') {
-            if (*(buf + 1) == '\0') { // If it ends with a pipe, we should just remove and ignore it
-                *buf = '\0';
-                break;
-            }
-
-            if (hadPipe) {
-                fprintf(stderr, "ERROR: shell doesn't support more than 1 PIPEs");
+            if (hadPipe || *(buf + 1) == '\0') {
+                if(hadPipe)
+                    fprintf(stderr, "ERROR: this shell doesn't support more than 1 PIPEs\n");
+                else
+                    fprintf(stderr, "ERROR: No arguments after PIPE\n");
 
                 *argc1 = 0;
                 *argc2 = 0;
@@ -155,6 +160,7 @@ void parseBuf(char *buf,
 //    doPrint(*argc2, *buf2, *maxBuf2, "command2: ");
 }
 
+// e.g.
 // "create_   tip_nume_t_    d_"
 // "tip_nume_t_    d_"
 // FAILED when return points towards 0
@@ -170,6 +176,7 @@ const char *getNextArg(const char *buf, const char *maxBuf) {
     return jumpWhitespaces(buf + 1);
 }
 
+// Allocate an array of strings, and call getNextArg repeatedly and fill the array up
 char *const *getArgv(unsigned argc, const char *buf, const char *maxBuf) {
     if (argc <= 0)
         return NULL;
@@ -193,6 +200,7 @@ char *const *getArgv(unsigned argc, const char *buf, const char *maxBuf) {
     return (char *const *) argv;
 }
 
+// For debugging
 void checkOpenFile() {
     if (fout_TEST == NULL) { // Not yet opened (pointer copied to processes, so it's okay)
         fout_TEST = fopen("shell.log", "w");
@@ -204,6 +212,7 @@ void checkOpenFile() {
     }
 }
 
+// For debugging
 void doPrint(unsigned argc, char *buf, const char *maxBuf, const char *stringToPrint) {
     checkOpenFile();
 
@@ -232,19 +241,21 @@ void doPrint(unsigned argc, char *buf, const char *maxBuf, const char *stringToP
     fflush(fout_TEST);
 }
 
+// Helper function for checking if a condition is OK for calling a command (argc conditions)
 int canCallConditionedCommand(int isConditionOk, const char *failureMsg) {
-    if (!isConditionOk) {
-        pid_status = 1;
-        fprintf(stderr, "%s", failureMsg);
+    if (isConditionOk)
+        return 1;
+
+    pid_status = MY_CUSTOM_EXIT_STATUS;
+    fprintf(stderr, "%s", failureMsg);
 #ifdef PRINT_HELP_ON_WRONG_INPUT
-        m_help();
+    m_help();
 #endif
 
-        return 0;
-    }
-    return 1;
+    return 0;
 }
 
+// perror with an extra
 void perrorExtra(const char *format, const char *extra) {
     char s[BUFF_SIZE];
     if (snprintf(s, BUFF_SIZE, format, extra) > 0)
@@ -256,8 +267,8 @@ void perrorExtra(const char *format, const char *extra) {
 
 
 /* ---------------------------------------- BUILT-IN COMMANDS ---------------------------------------- */
+
 void m_help() {
-    pid_status = 0;
     printf("This is a shell that can do the following:\n"
            "1. A prompt functionality\n"
            "2. Execute commands synchronously\n"
@@ -280,43 +291,38 @@ void m_help() {
 }
 
 void m_chdir(const char *buf) {
-    pid_status = 0;
-    const char *path = jumpWhitespaces(buf + 3);
+    const char *path = jumpWhitespaces(buf + 3); // +3 because we first jump over "cd "
     if (chdir(path) == -1) {
-        pid_status = 2;
-        perrorExtra("ERROR cd, %s", path);
+        pid_status = MY_CUSTOM_EXIT_STATUS;
+        perrorExtra("ERROR cd \"%s\"", path);
     }
 }
 
 void m_pwd() {
-    pid_status = 0;
     char *cwd;
     if ((cwd = getcwd(NULL, 0)) != NULL) {
         printf("%s\n", cwd);
         free(cwd);
     } else {
-        pid_status = 2;
+        pid_status = MY_CUSTOM_EXIT_STATUS;
         perror("ERROR pwd");
     }
 }
 
 int m_get_type(const char *buf) {
-    pid_status = 0;
     struct stat sb;
 
     // QUESTION: Should use lstat(), or stat() here?
-    const char *file = jumpWhitespaces(buf + 5);
+    const char *file = jumpWhitespaces(buf + 5); // +5 because we first jump over "type "
     if (lstat(file, &sb) == -1) {
-        pid_status = 2;
-        perrorExtra("ERROR type, %s", buf);
+        pid_status = MY_CUSTOM_EXIT_STATUS;
+        perrorExtra("ERROR type \"%s\"", file);
         return -1;
     }
     return (int) (sb.st_mode & S_IFMT);
 }
 
 void m_print_type(char *buf) {
-    pid_status = 0;
-
     int type = m_get_type(buf);
     if (type != -1) {
         switch (type) {
@@ -349,15 +355,13 @@ void m_print_type(char *buf) {
 }
 
 void m_create(unsigned argc, char *buf, const char *maxBuf) {
-    pid_status = 0;
-
     // TODO: Maybe remove extra '/' from path
 //    -> -f  (regular file) -> create -f <NAME> [DIR]{.}\n"
 //    -> -l  (symlink)      -> create -l <NAME> <TARGET> [DIR]{.}\n"
 //    -> -d  (directory)    -> create -d <NAME> [DIR]{.}\n"
 
     // Get the first 2 params (that should be present for all the commands)
-    char *typeBuf = (char *) jumpWhitespaces(buf + 7);
+    char *typeBuf = (char *) jumpWhitespaces(buf + 7); // +7 because we first jump over "create "
     char *nameBuf = (char *) getNextArg(typeBuf, maxBuf); // TODO: If '/' in name, create directories until that point
 
     // Do some checks to make sure the given commands are okay
@@ -398,7 +402,7 @@ void m_create(unsigned argc, char *buf, const char *maxBuf) {
         }
     }
 
-    // Get the next 1-2 params
+    // Get the next 1/2 params
     char *currentArg = nameBuf;
     char *targetBuf = NULL;
     if (isLink) {
@@ -407,8 +411,8 @@ void m_create(unsigned argc, char *buf, const char *maxBuf) {
     }
     char *dirParam = (char *) getNextArg(currentArg, maxBuf);
 
-    // Init dir buffer
-    // path + '/' + name + make_sure (dirParam can be of length 0)
+    // Init path buffer
+    // dirPath + '/' + name + make_sure (dirParam can be of length 0)
     const unsigned pathSize = strlen(dirParam) + 1 + strlen(nameBuf) + 10;
     char completePathBuf[pathSize];
 
@@ -423,51 +427,69 @@ void m_create(unsigned argc, char *buf, const char *maxBuf) {
     strcat(completePathBuf, "/"); // + 1
     strcat(completePathBuf, nameBuf); // + strlen(nameBuf)
 
-    if (isFile) {
+    if (isFile) { // Create a file
         int fp;
         if ((fp = open(completePathBuf, O_RDWR | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) == -1) {
+            pid_status = MY_CUSTOM_EXIT_STATUS;
             perrorExtra("Could not create file with path \"%s\"", completePathBuf);
             return;
         }
         if (close(fp) == -1) {
+            pid_status = MY_CUSTOM_EXIT_STATUS;
             perrorExtra("Could not close file with path \"%s\"", completePathBuf);
             return;
         }
-    } else if (isDir) {
+    } else if (isDir) { // Create a dir
         if (mkdir(completePathBuf, S_IRWXU | S_IRWXG | S_IRWXO) == -1) {
+            pid_status = MY_CUSTOM_EXIT_STATUS;
             perrorExtra("Could not create directory with path \"%s\"", completePathBuf);
             return;
         }
-    } else { // isLink
+    } else { // Create a symlink
         if (symlink(targetBuf, completePathBuf) == -1) {
+            pid_status = MY_CUSTOM_EXIT_STATUS;
             perrorExtra("Could not create symlink with path \"%s\"", completePathBuf);
             return;
         }
+    }
+}
+
+void m_status() {
+    if (WIFEXITED(pid_status)) {
+        printf("exited, m_status=%d\n", WEXITSTATUS(pid_status));
+    } else if (WIFSIGNALED(pid_status)) {
+        printf("killed by signal %d\n", WTERMSIG(pid_status));
+    } else if (WIFSTOPPED(pid_status)) {
+        printf("stopped by signal %d\n", WSTOPSIG(pid_status));
+    } else if (WIFCONTINUED(pid_status)) {
+        printf("continued\n");
     }
 }
 // ---------------------------------------- BUILT-IN COMMANDS ---------------------------------------- */
 
 
 /* --------------------------------------- PROCESSES AND PIPES --------------------------------------- */
+
+// Just a helper that executes the command and does stuff in case of an error
 void execCommand(char *const *argv, const char *buf) {
     execvp(argv[0], argv);
 
     // Error
     free((char **) argv);
-    perrorExtra("Couldn't execute command %s", buf);
+    perrorExtra("Couldn't execute command \"%s\"", buf);
     putchar('\n');
     exit(EXIT_FAILURE);
 }
 
 void executeExternal(unsigned argc, char *buf, const char *maxBuf) {
-    char *const *argv = getArgv(argc, buf, maxBuf);
+    char *const *argv = getArgv(argc, buf, maxBuf); // Get argv array
     if (argv == NULL) {
         // ERROR_PRINT
         doPrint(argc, buf, maxBuf, "argv == NULL\n");
         return;
     }
 
-    if (isChild != 0) // Child code, comes from PIPE, already have different process for it
+    if (isChild != 0) // Child code, comes from PIPE, already have a process for it, so we shouldn't create another one
     {
         execCommand(argv, buf);
     }
@@ -576,19 +598,6 @@ void executePipe(unsigned argc1, char *buf1, const char *maxBuf1,
         exit(EXIT_FAILURE);
     }
 }
-
-void status() {
-    // TODO: Should print correctly the last status for builtin commands as well
-    if (WIFEXITED(pid_status)) {
-        printf("exited, status=%d\n", WEXITSTATUS(pid_status));
-    } else if (WIFSIGNALED(pid_status)) {
-        printf("killed by signal %d\n", WTERMSIG(pid_status));
-    } else if (WIFSTOPPED(pid_status)) {
-        printf("stopped by signal %d\n", WSTOPSIG(pid_status));
-    } else if (WIFCONTINUED(pid_status)) {
-        printf("continued\n");
-    }
-}
 // --------------------------------------- PROCESSES AND PIPES --------------------------------------- */
 
 
@@ -602,39 +611,66 @@ void parseCommand(unsigned argc, char *buf, const char *maxBuf) {
         return;
     }
 
+    // - I can use strcmp because I preprocessed the buf with '\0'
+
+    // - canCallConditionedCommand() also helps with not repeating code, it just checks if I can execute the command
+
+    // - For the commands that can't have other arguments (argc=1), I chose to still print the output,
+    // while I do set the pid_status to an error.
+
     if (!strcmp(buf, "help")) { // Place this here as well to avoid going into executeExternal from "help"
-        if (argc != 1)
+        pid_status = 0;
+        if (argc != 1) {
             fprintf(stderr, "help may not receive arguments!\n");
+            pid_status = MY_CUSTOM_EXIT_STATUS;
+        }
         m_help();
-    } else if (!strcmp(buf, "exit")) {
+    }
+    else if (!strcmp(buf, "exit")) {
         exit(0);
-    } else if (!strcmp(buf, "cd")) { // I can use strcmp because I preprocessed the buf with '\0'
+    }
+    else if (!strcmp(buf, "cd")) {
+        pid_status = 0;
         if (canCallConditionedCommand(argc == 2,
                                       "cd may only receive 1 argument!\n")) {
             m_chdir(buf);
         }
-    } else if (!strcmp(buf, "pwd")) {
-        if (argc != 1)
+    }
+    else if (!strcmp(buf, "pwd")) {
+        pid_status = 0;
+        if (argc != 1) {
             fprintf(stderr, "pwd may not receive arguments!\n");
+            pid_status = MY_CUSTOM_EXIT_STATUS;
+        }
         m_pwd();
-    } else if (!strcmp(buf, "type")) {
+    }
+    else if (!strcmp(buf, "type")) {
+        pid_status = 0;
         if (canCallConditionedCommand(argc == 2,
                                       "type may only receive 1 argument!\n")) {
             m_print_type(buf);
         }
-    } else if (!strcmp(buf, "create")) {
+    }
+    else if (!strcmp(buf, "create")) {
+        pid_status = 0;
         if (canCallConditionedCommand(3 <= argc && argc <= 5,
-                                      "for create may only receive 2/3/4 arguments!\n")) {
+                                      "create may only receive 2/3/4 arguments!\n")) {
             m_create(argc, buf, maxBuf);
         }
-    } else if (!strcmp(buf, "status")) {
+    }
+    else if (!strcmp(buf, "status")) {
         if (argc != 1)
             fprintf(stderr, "status may not receive arguments!\n");
-        status();
-    } else if (argc >= 1) {
+        m_status();
+        if (argc != 1)
+            pid_status = MY_CUSTOM_EXIT_STATUS;
+        else
+            pid_status = 0;
+    }
+    else if (argc >= 1) {
+        pid_status = 0;
         if (!strcmp(buf, "run"))
             buf += 4; // Jump over "run "
-        pid_status = 0;
         executeExternal(argc, buf, maxBuf);
     }
 }
@@ -659,11 +695,13 @@ _Noreturn void start_shell() {
         if ((len = read(STDIN_FILENO, buf, BUFF_SIZE)) > 0) {
             buf[--len] = '\0';
 
+            // These will be set in parseBuf
             unsigned argc1 = 0, argc2 = 0;
             char *buf1 = NULL, *buf2 = NULL;
             const char *maxBuf1 = NULL, *maxBuf2 = NULL;
 
-            // e.g. "abc    tip nume t_" -> "abc_   tip_nume_t_"  // '_' is '\0'
+            // Replaces every first ' ' it finds, with a '\0'
+            // e.g. "abc    tip nume t_" ----> "abc_   tip_nume_t_"  // '_' is '\0'
             parseBuf(buf,
                      &argc1, &buf1, &maxBuf1,
                      &argc2, &buf2, &maxBuf2);

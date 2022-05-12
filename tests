@@ -1,45 +1,77 @@
 help x
+status
+
 cd
+status
+
 cd a b
+status
+
 cd ah8d9as89d8fuh
+status
+
 pwd a
+status
+
 type
+status
+
 type a b
+status
+
 create -f
+status
+
 create -l link
+status
+
 create -d
+status
+
 create a b c d e
+status
+
 create -f name dir ___
+status
+
 create -l name target dir ___
+status
+
 
 help
+status
+
 cd testdir
+status
 
 create -d testDir
+status
 create -d testDir/d1
 create -d d11 testDir/d1
 cd testDir/d1
 create -f d1/f1 ..
 cd ../../testDir
-
 create -f f1
 create -f d1/f2
 create -f f3 d1
 create -f f2 .
-
 create -l l1 f1 .
 create -l l2 f2
 cd d1/d11
 create -l ../l3 ../f1 ..
 cd ../..
+create -f f3
+
 type f1
 type d1
 type l1
 
-
 |ls
 |
+runls -l -a
 
+run ls -l -a
+ls -l -a
 ls -l -a | sort
 ls -l -a|sort
 ls -l -a| sort
