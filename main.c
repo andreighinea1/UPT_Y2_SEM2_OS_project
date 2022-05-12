@@ -2,14 +2,13 @@
 #include <unistd.h>
 #include <string.h>
 #include <stdlib.h>
-#include <sys/types.h>
 #include <sys/stat.h>
 #include <ctype.h>
 #include <fcntl.h>
-#include <unistd.h>
 #include <sys/wait.h>
 
 #define BUFF_SIZE 10240
+#define PRINT_HELP_ON_WRONG_INPUT
 
 // For Windows
 //#if (defined(_WIN32) || defined(__WIN32__))
@@ -56,6 +55,12 @@ void doPrint(unsigned argc, char *buf, const char *maxBuf, const char *stringToP
 
 void m_help();
 // -------------------------------------- FUNCTION DEFINITIONS --------------------------------------- */
+
+/* ------------------------------------------- GLOBAL VARS ------------------------------------------- */
+FILE *fout_TEST = NULL;
+int pid_status; // TODO IMPORTANT: Make this work properly
+int isChild;
+// ------------------------------------------- GLOBAL VARS ------------------------------------------- */
 
 /* --------------------------------------------- HELPERS --------------------------------------------- */
 const char *jumpWhitespaces(const char *buf) {
@@ -172,7 +177,6 @@ char *const *getArgv(unsigned argc, const char *buf, const char *maxBuf) {
     const char **argv = malloc(sizeof(char *) * (argc + 1));
     if (argv == NULL) {
         perror("getArgv - Couldn't allocate memory!!\n");
-        m_help();
         exit(EXIT_FAILURE);
     }
 
@@ -188,9 +192,6 @@ char *const *getArgv(unsigned argc, const char *buf, const char *maxBuf) {
 
     return (char *const *) argv;
 }
-
-
-FILE *fout_TEST = NULL;
 
 void checkOpenFile() {
     if (fout_TEST == NULL) { // Not yet opened (pointer copied to processes, so it's okay)
@@ -230,11 +231,25 @@ void doPrint(unsigned argc, char *buf, const char *maxBuf, const char *stringToP
 
     fflush(fout_TEST);
 }
+
+int canCallConditionedCommand(int isConditionOk, const char *failureMsg) {
+    if (!isConditionOk) {
+        pid_status = 1;
+        printf("%s", failureMsg);
+#ifdef PRINT_HELP_ON_WRONG_INPUT
+        m_help();
+#endif
+
+        return 0;
+    }
+    return 1;
+}
 // --------------------------------------------- HELPERS --------------------------------------------- */
 
 
 /* ---------------------------------------- BUILT-IN COMMANDS ---------------------------------------- */
 void m_help() {
+    pid_status = 0;
     printf("This is a shell that can do the following:\n"
            "1. A promt functionality\n"
            "2. Execute commands syncronously\n"
@@ -257,36 +272,41 @@ void m_help() {
 }
 
 void m_chdir(char *buf) {
+    pid_status = 0;
     if (chdir(jumpWhitespaces(buf + 3)) == -1) {
+        pid_status = 2;
         perror("ERROR cd");
-        m_help();
     }
 }
 
 void m_pwd() {
+    pid_status = 0;
     char *cwd;
     if ((cwd = getcwd(NULL, 0)) != NULL) {
         printf("%s\n", cwd);
         free(cwd);
     } else {
+        pid_status = 2;
         perror("ERROR pwd");
-        m_help();
     }
 }
 
 int m_get_type(const char *buf) {
+    pid_status = 0;
     struct stat sb;
 
     // QUESTION: Should use lstat(), or stat() here?
     if (lstat(jumpWhitespaces(buf + 5), &sb) == -1) {
+        pid_status = 2;
         perror("ERROR type");
-        m_help();
         return -1;
     }
-    return sb.st_mode & S_IFMT;
+    return (int) (sb.st_mode & S_IFMT);
 }
 
 void m_print_type(char *buf) {
+    pid_status = 0;
+
     int type = m_get_type(buf);
     if (type != -1) {
         switch (type) {
@@ -308,7 +328,7 @@ void m_print_type(char *buf) {
             case S_IFREG:
                 printf("regular file\n");
                 break;
-            case S_IFSOCK:
+            case S_IFSOCK: // This is the max value, which is 0xC000
                 printf("socket\n");
                 break;
             default:
@@ -319,6 +339,8 @@ void m_print_type(char *buf) {
 }
 
 void m_create(unsigned argc, char *buf, const char *maxBuf) {
+    pid_status = 0;
+
     // TODO: Maybe remove extra '/' from path
 //    -> -f  (regular file) -> create -f <NAME> [DIR]{.}\n"
 //    -> -l  (symlink)      -> create -l <NAME> <TARGET> [DIR]{.}\n"
@@ -331,7 +353,9 @@ void m_create(unsigned argc, char *buf, const char *maxBuf) {
     // Do some checks to make sure the given commands are okay
     if (!(*typeBuf) || !(*nameBuf)) {
         printf("No type/name provided\n\n");
+#ifdef PRINT_HELP_ON_WRONG_INPUT
         m_help();
+#endif
         return;
     }
 
@@ -341,19 +365,25 @@ void m_create(unsigned argc, char *buf, const char *maxBuf) {
 
     if (!isLink && !isFile && !isDir) {
         printf("File type not supported: %s\n\n", typeBuf);
+#ifdef PRINT_HELP_ON_WRONG_INPUT
         m_help();
+#endif
         return;
     }
     if (isLink) {
         if (argc < 4 || argc > 5) { // Symlinks have argc={4, 5}
             printf("When creating symlinks, argc={4, 5}\n\n");
+#ifdef PRINT_HELP_ON_WRONG_INPUT
             m_help();
+#endif
             return;
         }
     } else {
         if (argc < 3 || argc > 4) { // Files and dirs have argc={3, 4}
             printf("When creating files/directories, argc={3, 4}\n\n");
+#ifdef PRINT_HELP_ON_WRONG_INPUT
             m_help();
+#endif
             return;
         }
     }
@@ -396,24 +426,20 @@ void m_create(unsigned argc, char *buf, const char *maxBuf) {
         int fp;
         if ((fp = open(completePathBuf, O_RDWR | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) == -1) {
             perror("Could not create file");
-            m_help();
             return;
         }
         if (close(fp) == -1) {
             perror("Could not close file");
-            m_help();
             return;
         }
     } else if (isDir) {
         if (mkdir(completePathBuf, S_IRWXU | S_IRWXG | S_IRWXO) == -1) {
             perror("Could not create directory");
-            m_help();
             return;
         }
     } else { // isLink
         if (symlink(targetBuf, completePathBuf) == -1) {
             perror("Could not create a symlink");
-            m_help();
             return;
         }
     }
@@ -422,9 +448,6 @@ void m_create(unsigned argc, char *buf, const char *maxBuf) {
 
 
 /* --------------------------------------- PROCESSES AND PIPES --------------------------------------- */
-int pid_status; // TODO IMPORTANT: Make this work properly
-int isChild;
-
 void execCommand(char *const *argv) {
     execvp(argv[0], argv);
 
@@ -436,7 +459,6 @@ void execCommand(char *const *argv) {
     perror(s);
 
     putchar('\n');
-    m_help();
     exit(EXIT_FAILURE);
 }
 
@@ -457,7 +479,6 @@ void executeExternal(unsigned argc, char *buf, const char *maxBuf) {
     if ((pid = fork()) < 0) {
         free((char **) argv);
         perror("Couldn't start a process for exec external");
-        m_help();
         return;
     }
     if (pid == 0) // Child code
@@ -494,7 +515,6 @@ void executePipe(unsigned argc1, char *buf1, const char *maxBuf1,
     // CREATE FIRST PROCESS (STDIN -> command1)
     if ((pid = fork()) < 0) {
         perror("Couldn't start a process for PIPE");
-        m_help();
         exit(EXIT_FAILURE);
     }
     if (pid == 0) { // Child code (STDIN -> command1)
@@ -528,7 +548,6 @@ void executePipe(unsigned argc1, char *buf1, const char *maxBuf1,
     // CREATE SECOND PROCESS (command1 -> command2)
     if ((pid = fork()) < 0) {
         perror("Couldn't start a process for PIPE");
-        m_help();
         exit(EXIT_FAILURE);
     }
     if (pid == 0) { // Child code (command1 -> command2)
@@ -576,6 +595,7 @@ void status() {
 // --------------------------------------- PROCESSES AND PIPES --------------------------------------- */
 
 
+/* ----------------------------------------- SHELL SPECIFIC ------------------------------------------ */
 void parseCommand(unsigned argc, char *buf, const char *maxBuf) {
     if (argc == 0)
         return;
@@ -585,46 +605,36 @@ void parseCommand(unsigned argc, char *buf, const char *maxBuf) {
         return;
     }
 
-//    pid_status = 0; // TODO: Check if this is correct
-    if (argc == 1 && !strcmp(buf, "help")) { // Place this here as well to avoid going into executeExternal from "help"
-        m_help();
+    if (!strcmp(buf, "help")) { // Place this here as well to avoid going into executeExternal from "help"
         pid_status = 0;
+        m_help();
     } else if (!strcmp(buf, "exit")) {
         exit(0);
-    } else if (argc == 2 && !strcmp(buf, "cd")) { // I can use strcmp because I preprocessed the buf with '\0'
-        pid_status = 0;
-        m_chdir(buf);
+    } else if (!strcmp(buf, "cd")) { // I can use strcmp because I preprocessed the buf with '\0'
+        if (canCallConditionedCommand(argc == 2,
+                                      "cd may only receive 1 argument!\n")) {
+            m_chdir(buf);
+        }
     } else if (!strcmp(buf, "pwd")) {
-        if (argc != 1) {
-            printf("pwd may not receive arguments!\n");
-            m_help();
-        } else {
-            pid_status = 0;
+        if (canCallConditionedCommand(argc == 1,
+                                      "pwd may not receive arguments!\n")) {
             m_pwd();
         }
     } else if (!strcmp(buf, "type")) {
-        if (argc != 2) {
-            printf("type may only receive 1 argument!\n");
-            m_help();
-        } else {
-            pid_status = 0;
+        if (canCallConditionedCommand(argc == 2,
+                                      "type may only receive 1 argument!\n")) {
             m_print_type(buf);
         }
     } else if (!strcmp(buf, "create")) {
-        if (argc < 3 || argc > 5) {
-            printf("create may only receive 3/4/5 arguments!\n");
-            m_help();
-        } else {
-            pid_status = 0;
+        if (canCallConditionedCommand(3 <= argc && argc <= 5,
+                                      "create may only receive 3/4/5 arguments!\n")) {
             m_create(argc, buf, maxBuf);
         }
     } else if (!strcmp(buf, "status")) {
         if (argc != 1) {
             printf("status may not receive arguments!\n");
-            m_help();
-        } else {
-            status();
         }
+        status();
     } else if (argc >= 1) {
         pid_status = 0;
         executeExternal(argc, buf, maxBuf);
@@ -671,6 +681,7 @@ _Noreturn void start_shell() {
         }
     }
 }
+// ----------------------------------------- SHELL SPECIFIC ------------------------------------------ */
 
 int main() {
     start_shell();
