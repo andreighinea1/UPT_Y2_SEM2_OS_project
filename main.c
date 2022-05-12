@@ -86,7 +86,7 @@ void parseBuf(char *buf,
 
     buf = (char *) jumpWhitespaces(buf); // Jump if there are whitespaces at the start of the buffer
     if (startsWith(buf, '|')) {
-        printf("-bash: syntax error near unexpected token `|'\n");
+        fprintf(stderr, "-bash: syntax error near unexpected token `|'\n");
         return;
     }
     *buf1 = buf; // The first buffer starts after those jumped whitespaces
@@ -163,7 +163,7 @@ const char *getNextArg(const char *buf, const char *maxBuf) {
     if (buf == maxBuf)
         return buf; // The last one, nothing afterwards, end with '\0'
     if (buf > maxBuf) {
-        printf("buf > maxBuf; maxBuf is not calculated correctly!!\n");
+        fprintf(stderr, "buf > maxBuf; maxBuf is not calculated correctly!!\n");
         exit(EXIT_FAILURE);
     }
 
@@ -198,7 +198,7 @@ void checkOpenFile() {
         fout_TEST = fopen("shell.log", "w");
 
         if (fout_TEST == NULL) {
-            perror("checkOpenFile");
+            perror("checkOpenFile - couldn't open file");
             exit(EXIT_FAILURE);
         }
     }
@@ -235,7 +235,7 @@ void doPrint(unsigned argc, char *buf, const char *maxBuf, const char *stringToP
 int canCallConditionedCommand(int isConditionOk, const char *failureMsg) {
     if (!isConditionOk) {
         pid_status = 1;
-        printf("%s", failureMsg);
+        fprintf(stderr, "%s", failureMsg);
 #ifdef PRINT_HELP_ON_WRONG_INPUT
         m_help();
 #endif
@@ -244,10 +244,19 @@ int canCallConditionedCommand(int isConditionOk, const char *failureMsg) {
     }
     return 1;
 }
+
+void perrorExtra(const char *format, const char *extra) {
+    char s[BUFF_SIZE];
+    if (snprintf(s, BUFF_SIZE, format, extra) > 0)
+        perror(s);
+    else
+        perror(format);
+}
 // --------------------------------------------- HELPERS --------------------------------------------- */
 
 
 /* ---------------------------------------- BUILT-IN COMMANDS ---------------------------------------- */
+// TODO IMPORTANT: Maybe implement "run"??
 void m_help() {
     pid_status = 0;
     printf("This is a shell that can do the following:\n"
@@ -271,11 +280,12 @@ void m_help() {
            "\n");
 }
 
-void m_chdir(char *buf) {
+void m_chdir(const char *buf) {
     pid_status = 0;
-    if (chdir(jumpWhitespaces(buf + 3)) == -1) {
+    const char *path = jumpWhitespaces(buf + 3);
+    if (chdir(path) == -1) {
         pid_status = 2;
-        perror("ERROR cd");
+        perrorExtra("ERROR cd, %s", path);
     }
 }
 
@@ -296,9 +306,10 @@ int m_get_type(const char *buf) {
     struct stat sb;
 
     // QUESTION: Should use lstat(), or stat() here?
-    if (lstat(jumpWhitespaces(buf + 5), &sb) == -1) {
+    const char *file = jumpWhitespaces(buf + 5);
+    if (lstat(file, &sb) == -1) {
         pid_status = 2;
-        perror("ERROR type");
+        perrorExtra("ERROR type, %s", buf);
         return -1;
     }
     return (int) (sb.st_mode & S_IFMT);
@@ -332,7 +343,7 @@ void m_print_type(char *buf) {
                 printf("socket\n");
                 break;
             default:
-                printf("unknown?\n");
+                fprintf(stderr, "unknown?\n");
                 break;
         }
     }
@@ -352,7 +363,7 @@ void m_create(unsigned argc, char *buf, const char *maxBuf) {
 
     // Do some checks to make sure the given commands are okay
     if (!(*typeBuf) || !(*nameBuf)) {
-        printf("No type/name provided\n\n");
+        fprintf(stderr, "No type/name provided\n\n");
 #ifdef PRINT_HELP_ON_WRONG_INPUT
         m_help();
 #endif
@@ -364,7 +375,7 @@ void m_create(unsigned argc, char *buf, const char *maxBuf) {
     int isDir = !strcmp(typeBuf, "-d");
 
     if (!isLink && !isFile && !isDir) {
-        printf("File type not supported: %s\n\n", typeBuf);
+        fprintf(stderr, "File type not supported: %s\n\n", typeBuf);
 #ifdef PRINT_HELP_ON_WRONG_INPUT
         m_help();
 #endif
@@ -372,7 +383,7 @@ void m_create(unsigned argc, char *buf, const char *maxBuf) {
     }
     if (isLink) {
         if (argc < 4 || argc > 5) { // Symlinks have argc={4, 5}
-            printf("When creating symlinks, argc={4, 5}\n\n");
+            fprintf(stderr, "When creating symlinks, argc={4, 5}\n\n");
 #ifdef PRINT_HELP_ON_WRONG_INPUT
             m_help();
 #endif
@@ -380,7 +391,7 @@ void m_create(unsigned argc, char *buf, const char *maxBuf) {
         }
     } else {
         if (argc < 3 || argc > 4) { // Files and dirs have argc={3, 4}
-            printf("When creating files/directories, argc={3, 4}\n\n");
+            fprintf(stderr, "When creating files/directories, argc={3, 4}\n\n");
 #ifdef PRINT_HELP_ON_WRONG_INPUT
             m_help();
 #endif
@@ -425,21 +436,21 @@ void m_create(unsigned argc, char *buf, const char *maxBuf) {
     if (isFile) {
         int fp;
         if ((fp = open(completePathBuf, O_RDWR | O_CREAT | O_EXCL, S_IRUSR | S_IWUSR | S_IRGRP | S_IROTH)) == -1) {
-            perror("Could not create file");
+            perrorExtra("Could not create file with path \"%s\"", completePathBuf);
             return;
         }
         if (close(fp) == -1) {
-            perror("Could not close file");
+            perrorExtra("Could not close file with path \"%s\"", completePathBuf);
             return;
         }
     } else if (isDir) {
         if (mkdir(completePathBuf, S_IRWXU | S_IRWXG | S_IRWXO) == -1) {
-            perror("Could not create directory");
+            perrorExtra("Could not create directory with path \"%s\"", completePathBuf);
             return;
         }
     } else { // isLink
         if (symlink(targetBuf, completePathBuf) == -1) {
-            perror("Could not create a symlink");
+            perrorExtra("Could not create symlink with path \"%s\"", completePathBuf);
             return;
         }
     }
@@ -453,11 +464,7 @@ void execCommand(char *const *argv) {
 
     // Error
     free((char **) argv);
-
-    char s[100];
-    sprintf(s, "Couldn't execute command %s", argv[0]);
-    perror(s);
-
+    perrorExtra("Couldn't execute command %s", argv[0]);
     putchar('\n');
     exit(EXIT_FAILURE);
 }
@@ -606,7 +613,8 @@ void parseCommand(unsigned argc, char *buf, const char *maxBuf) {
     }
 
     if (!strcmp(buf, "help")) { // Place this here as well to avoid going into executeExternal from "help"
-        pid_status = 0;
+        if (argc != 1)
+            fprintf(stderr, "help may not receive arguments!\n");
         m_help();
     } else if (!strcmp(buf, "exit")) {
         exit(0);
@@ -616,10 +624,9 @@ void parseCommand(unsigned argc, char *buf, const char *maxBuf) {
             m_chdir(buf);
         }
     } else if (!strcmp(buf, "pwd")) {
-        if (canCallConditionedCommand(argc == 1,
-                                      "pwd may not receive arguments!\n")) {
-            m_pwd();
-        }
+        if (argc != 1)
+            fprintf(stderr, "pwd may not receive arguments!\n");
+        m_pwd();
     } else if (!strcmp(buf, "type")) {
         if (canCallConditionedCommand(argc == 2,
                                       "type may only receive 1 argument!\n")) {
@@ -631,9 +638,8 @@ void parseCommand(unsigned argc, char *buf, const char *maxBuf) {
             m_create(argc, buf, maxBuf);
         }
     } else if (!strcmp(buf, "status")) {
-        if (argc != 1) {
-            printf("status may not receive arguments!\n");
-        }
+        if (argc != 1)
+            fprintf(stderr, "status may not receive arguments!\n");
         status();
     } else if (argc >= 1) {
         pid_status = 0;
@@ -647,9 +653,7 @@ _Noreturn void start_shell() {
     ssize_t len;
 
     while (1) {
-        // TODO: Flush stdout, stderr before start of shell ???
         fflush(stderr); // Had some issues with this one
-//        fflush(stdout);
 
         if ((cwd = getcwd(NULL, 0)) != NULL) {
             printf("%s> ", cwd);
@@ -661,7 +665,7 @@ _Noreturn void start_shell() {
 
         // TODO: Add a functionality to separate whole commands by '\n' (for bulk testing)
         if ((len = read(STDIN_FILENO, buf, BUFF_SIZE)) > 0) {
-            buf[--len] = 0;
+            buf[--len] = '\0';
 
             unsigned argc1 = 0, argc2 = 0;
             char *buf1 = NULL, *buf2 = NULL;
